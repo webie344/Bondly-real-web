@@ -914,8 +914,8 @@ document.addEventListener('DOMContentLoaded', () => {
             position: absole;
             bottom: 10px;
             right: 10px;
-            width: 15px;
-            height: 15px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
             border: 2px solid white;
         }

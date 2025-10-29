@@ -145,55 +145,7 @@
         max-width: calc(100% - 90px);
     }
 }
-/* Chat messages container with wallpaper background */
-.chat-messages {
-    background-image: url('darkwallpaper.jpg');
-    background-size: cover;
-    background-position: center;
-    background-attachment: fixed;
-    position: relative;
-}
 
-/* Add a semi-transparent overlay for better readability */
-.chat-messages::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.4); /* Adjust opacity as needed */
-    z-index: 0;
-}
-
-/* Ensure messages appear above the overlay */
-.message {
-    position: relative;
-    z-index: ;
-}
-
-/* Optional: Adjust message backgrounds for better contrast with wallpaper */
-.message.sent {
-    background-color: rgba(86, 101, 242, 0.9); /* Discord blurple with transparency */
-    backdrop-filter: blur(5px);
-}
-
-.message.received {
-    background-color: rgba(47, 49, 54, 0.85); /* Discord darker with transparency */
-    backdrop-filter: blur(5px);
-    border: 1px solid rgba(64, 68, 75, 0.5);
-}
-
-/* Adjust message text for better readability on wallpaper */
-.message {
-    color: var(--discord-text);
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-/* Adjust timestamp text */
-.message-time {
-    color: rgba(255, 255, 255, 0.8);
-}
 
     
     /* Message Reactions */
@@ -470,7 +422,7 @@
     <script type="module" src="additional.js"></script>
      
 
-<script type="module" src="verification.js"></script>
+
     
     
     <!-- Add this script for reaction picker positioning -->
