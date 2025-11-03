@@ -1,26 +1,26 @@
-/* White & Orange Theme for Dating Site */
+/* White & Light Pink Theme for Dating Site */
 :root {
-    /* Orange color palette */
-    --orange-primary: #FF6B35;
-    --orange-light: #FF8E53;
-    --orange-dark: #E55A2B;
-    --orange-accent: #FF9E6D;
-    --orange-pastel: #FFE8E0;
+    /* Lovely light pink color palette */
+    --pink-primary: #FF6B9D;
+    --pink-light: #FFB6C1;
+    --pink-dark: #E0557E;
+    --pink-accent: #FF8FAB;
+    --pink-pastel: #FFF0F5;
     
     /* White and neutral colors */
     --white: #FFFFFF;
-    --white-smoke: #F8F9FA;
-    --white-soft: #F5F5F5;
-    --gray-light: #E9ECEF;
+    --white-smoke: #FFF8FA;
+    --white-soft: #FFF5F9;
+    --gray-light: #F8E8EE;
     --gray-medium: #6C757D;
     --gray-dark: #495057;
-    --text-dark: #212529;
-    --text-muted: #6C757D;
+    --text-dark: #2C3E50;
+    --text-muted: #7F8C8D;
     
     /* Theme variables */
-    --primary-color: var(--orange-primary);
-    --secondary-color: var(--orange-light);
-    --accent-color: var(--orange-dark);
+    --primary-color: var(--pink-primary);
+    --secondary-color: var(--pink-light);
+    --accent-color: var(--pink-dark);
     --light-color: var(--white-soft);
     --dark-color: var(--gray-dark);
     --text-color: var(--text-dark);
@@ -30,8 +30,8 @@
     --border-color: var(--gray-light);
     
     /* Shadow and transitions */
-    --shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-    --shadow-hover: 0 4px 20px rgba(0, 0, 0, 0.12);
+    --shadow: 0 2px 10px rgba(255, 107, 157, 0.08);
+    --shadow-hover: 0 4px 20px rgba(255, 107, 157, 0.12);
     --transition: all 0.3s ease;
 }
 
@@ -47,9 +47,62 @@ body {
     color: var(--text-color);
     background-color: var(--background-color);
     background-image: 
-        radial-gradient(circle at 15% 50%, rgba(255, 107, 53, 0.03) 0%, transparent 25%),
-        radial-gradient(circle at 85% 30%, rgba(255, 142, 83, 0.03) 0%, transparent 25%);
+        radial-gradient(circle at 15% 50%, rgba(255, 107, 157, 0.03) 0%, transparent 25%),
+        radial-gradient(circle at 85% 30%, rgba(255, 182, 193, 0.03) 0%, transparent 25%);
 }
+
+/* ===== WALLPAPER & ANIMATION COMPATIBILITY ===== */
+/* Only apply transparent backgrounds to profile-related pages */
+body.profile-page,
+body.account-page,
+body.mingle-page {
+    background-color: transparent !important;
+    background-image: none !important;
+}
+
+/* Wallpaper and animation container styles */
+#profile-wallpaper,
+#profile-animation,
+#custom-background {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: -10000 !important;
+    pointer-events: none !important;
+}
+
+/* Make sure content containers don't block wallpapers */
+.profile-view-container,
+.account-container,
+.mingle-container {
+    position: relative;
+    z-index: 1;
+    background: transparent !important;
+}
+
+/* FIXED: Semi-transparent cards for profile pages WITHOUT backdrop-filter */
+body.profile-page .profile-details,
+body.profile-page .profile-card,
+body.account-page .account-main,
+body.account-page .account-sidebar,
+body.mingle-page .profile-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 248, 250, 0.98)) !important;
+    /* backdrop-filter removed to prevent blurring animations */
+    border: 1px solid rgba(255, 107, 157, 0.2);
+    box-shadow: 0 8px 32px rgba(255, 107, 157, 0.1);
+}
+
+/* Keep normal backgrounds for other pages */
+.profile-details,
+.profile-card,
+.account-main,
+.account-sidebar {
+    background-color: var(--white);
+}
+
+/* ===== END WALLPAPER COMPATIBILITY ===== */
 
 a {
     text-decoration: none;
@@ -83,7 +136,7 @@ img {
 }
 
 .btn-primary:hover {
-    background-color: var(--orange-dark);
+    background-color: var(--pink-dark);
     transform: translateY(-2px);
     box-shadow: var(--shadow-hover);
 }
@@ -94,7 +147,7 @@ img {
 }
 
 .btn-secondary:hover {
-    background-color: var(--orange-dark);
+    background-color: var(--pink-dark);
     transform: translateY(-2px);
     box-shadow: var(--shadow-hover);
 }
@@ -105,7 +158,7 @@ img {
 }
 
 .btn-like:hover {
-    background-color: #D4491F;
+    background-color: #D14A6F;
     transform: translateY(-2px);
     box-shadow: var(--shadow-hover);
 }
@@ -195,7 +248,7 @@ img {
 /* Hero Section */
 .hero {
     height: 100vh;
-    background: linear-gradient(rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.95)), url('https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80') no-repeat center center/cover;
+    background: linear-gradient(rgba(255, 255, 255, 0.95), rgba(255, 248, 250, 0.98)), url('https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80') no-repeat center center/cover;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -292,7 +345,7 @@ img {
 .form-group textarea:focus {
     border-color: var(--primary-color);
     outline: none;
-    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
+    box-shadow: 0 0 0 3px rgba(255, 107, 157, 0.1);
 }
 
 .toggle-password {
@@ -320,6 +373,10 @@ img {
     max-width: 500px;
     margin: 0 auto;
     background-color: var(--white-smoke);
+}
+
+body.mingle-page .mingle-container {
+    background-color: transparent !important;
 }
 
 .profile-card {
@@ -354,7 +411,7 @@ img {
     bottom: 0;
     left: 0;
     right: 0;
-    background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+    background: linear-gradient(transparent, rgba(44, 62, 80, 0.7));
     padding: 1rem;
     padding-top: 50px;
 }
@@ -393,7 +450,7 @@ img {
 }
 
 .like-btn:hover {
-    background-color: var(--orange-dark);
+    background-color: var(--pink-dark);
 }
 
 .chat-btn {
@@ -402,7 +459,7 @@ img {
 }
 
 .chat-btn:hover {
-    background-color: var(--orange-dark);
+    background-color: var(--pink-dark);
 }
 
 .view-btn:hover {
@@ -448,6 +505,10 @@ img {
     grid-template-columns: 1fr;
     gap: 2rem;
     background-color: var(--white-smoke);
+}
+
+body.profile-page .profile-view-container {
+    background-color: transparent !important;
 }
 
 .profile-gallery {
@@ -544,12 +605,12 @@ img {
 }
 
 .interest-tag {
-    background-color: var(--orange-pastel);
+    background-color: var(--pink-pastel);
     padding: 0.5rem 1rem;
     border-radius: 16px;
     font-size: 0.9rem;
-    color: var(--orange-dark);
-    border: 1px solid var(--orange-light);
+    color: var(--pink-dark);
+    border: 1px solid var(--pink-light);
 }
 
 .profile-stats {
@@ -596,6 +657,10 @@ img {
     max-width: 1200px;
     margin: 0 auto;
     background-color: var(--white-smoke);
+}
+
+body.account-page .account-container {
+    background-color: transparent !important;
 }
 
 .account-header {
@@ -647,7 +712,7 @@ img {
 }
 
 .upload-btn:hover {
-    background-color: var(--orange-dark);
+    background-color: var(--pink-dark);
 }
 
 .account-menu {
@@ -670,7 +735,7 @@ img {
 
 .menu-item:hover,
 .menu-item.active {
-    background-color: var(--orange-pastel);
+    background-color: var(--pink-pastel);
     color: var(--primary-color);
 }
 
@@ -731,7 +796,7 @@ img {
 }
 
 .interests-input button:hover {
-    background-color: var(--orange-dark);
+    background-color: var(--pink-dark);
 }
 
 #accountInterestsContainer {
@@ -803,7 +868,7 @@ img {
     color: var(--text-muted);
 }
 
-/* Messages */
+/* Messages - Updated with transparent backgrounds */
 .chat-messages {
     flex: 1;
     padding: 16px 16px 80px 16px;
@@ -889,12 +954,25 @@ img {
     word-wrap: break-word;
 }
 
-.message-image {
+/* Message images and videos with transparent backgrounds */
+.message-image,
+.message-video {
     max-width: 100%;
     max-height: 300px;
     border-radius: 6px;
     margin-bottom: 6px;
     display: block;
+    background-color: transparent !important;
+    border: none;
+}
+
+.message-video {
+    background: transparent !important;
+}
+
+.message-video video {
+    background: transparent !important;
+    border-radius: 6px;
 }
 
 .typing-indicator {
@@ -1286,7 +1364,7 @@ img {
     }
 }
 
-/* Additional styling for orange theme */
+/* Additional styling for pink theme */
 .btn-primary, .btn-secondary, .btn-like {
     border: none;
     padding: 12px 24px;
@@ -1299,7 +1377,7 @@ img {
     align-items: center;
     gap: 12px;
     padding: 12px 16px;
-    background-color: #FF4757;
+    background-color: var(--primary-color);
     color: white;
     border-radius: 8px;
     margin-bottom: 8px;
@@ -1438,7 +1516,7 @@ img {
 
 /* Selection Color */
 ::selection {
-    background-color: var(--orange-pastel);
+    background-color: var(--pink-pastel);
     color: var(--text-dark);
 }
 
@@ -1553,7 +1631,7 @@ textarea:focus {
 
 .banner-item.selected {
     border-color: var(--primary-color);
-    box-shadow: 0 0 10px rgba(255, 107, 53, 0.5);
+    box-shadow: 0 0 10px rgba(255, 107, 157, 0.5);
 }
 
 .banner-preview {
@@ -1590,17 +1668,17 @@ textarea:focus {
     opacity: 1;
 }
 
-/* Custom banner colors with orange theme */
-.banner-single { background: linear-gradient(135deg, #FF6B35 0%, #FF8E53 100%); }
-.bplayboy { background: linear-gradient(135deg, #FFB088 0%, #FF8E53 100%); }
-.banner-serious { background: linear-gradient(135deg, #FF6B35 0%, #E55A2B 100%); }
-.banner-adventurous { background: linear-gradient(135deg, #FF9E6D 0%, #FF6B35 100%); }
-.banner-romantic { background: linear-gradient(135deg, #FFE8E0 0%, #FFB088 100%); color: #333; }
-.banner-funny { background: linear-gradient(135deg, #FF8E53 0%, #FF6B35 100%); }
-.banner-ambitious { background: linear-gradient(135deg, #FFB74D 0%, #FF9800 100%); color: #333; }
-.banner-chill { background: linear-gradient(135deg, #FFCCBC 0%, #FFAB91 100%); color: #333; }
-.banner-mysterious { background: linear-gradient(135deg, #795548 0%, #5D4037 100%); }
-.banner-creative { background: linear-gradient(135deg, #FFD54F 0%, #FFC107 100%); color: #333; }
+/* Custom banner colors with pink theme */
+.banner-single { background: linear-gradient(135deg, #FF6B9D 0%, #FFB6C1 100%); }
+.bplayboy { background: linear-gradient(135deg, #FFB6C1 0%, #FF8FAB 100%); }
+.banner-serious { background: linear-gradient(135deg, #FF6B9D 0%, #E0557E 100%); }
+.banner-adventurous { background: linear-gradient(135deg, #FF8FAB 0%, #FF6B9D 100%); }
+.banner-romantic { background: linear-gradient(135deg, #FFF0F5 0%, #FFB6C1 100%); color: #333; }
+.banner-funny { background: linear-gradient(135deg, #FFB6C1 0%, #FF6B9D 100%); }
+.banner-ambitious { background: linear-gradient(135deg, #FFC2D1 0%, #FF8FAB 100%); color: #333; }
+.banner-chill { background: linear-gradient(135deg, #FFF0F5 0%, #FFD1DC 100%); color: #333; }
+.banner-mysterious { background: linear-gradient(135deg, #546E7A 0%, #37474F 100%); }
+.banner-creative { background: linear-gradient(135deg, #FFD1DC 0%, #FF8FAB 100%); color: #333; }
 
 .profile-banner {
     margin: 15px 0;
@@ -1699,7 +1777,7 @@ textarea:focus {
 }
 
 .dropdown-item:hover {
-    background: var(--orange-pastel);
+    background: var(--pink-pastel);
 }
 
 .dropdown-item i {
@@ -1840,7 +1918,7 @@ textarea:focus {
 }
 
 .voice-note-btn-main:hover {
-    background-color: var(--orange-pastel);
+    background-color: var(--pink-pastel);
 }
 
 /* Voice note preview */
@@ -1878,21 +1956,21 @@ textarea:focus {
     border: 1px solid var(--border-color);
 }
 
-/* Enhanced orange theme elements */
+/* Enhanced pink theme elements */
 .interest-tag {
-    background-color: var(--orange-pastel);
-    color: var(--orange-dark);
-    border: 1px solid var(--orange-light);
+    background-color: var(--pink-pastel);
+    color: var(--pink-dark);
+    border: 1px solid var(--pink-light);
 }
 
 .menu-item.active, .menu-item:hover {
-    background-color: var(--orange-pastel);
+    background-color: var(--pink-pastel);
     color: var(--primary-color);
 }
 
 .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
+    box-shadow: 0 0 0 3px rgba(255, 107, 157, 0.1);
 }
 
 /* Ensure hero buttons layout works with new button */
@@ -1900,7 +1978,7 @@ textarea:focus {
     margin: 0;
 }
 
-/* Orange theme enhancements for interactive elements */
+/* Pink theme enhancements for interactive elements */
 .action-btn:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-hover);
@@ -1916,7 +1994,7 @@ textarea:focus {
     box-shadow: var(--shadow-hover);
 }
 
-/* Orange gradient accents */
+/* Pink gradient accents */
 .hero-buttons .btn-primary {
     background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
 }
@@ -1930,4 +2008,16 @@ textarea:focus {
 .hero-buttons .btn-secondary:hover {
     background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
     color: var(--white);
+}
+
+/* Additional styles for transparent message media */
+.message-image img,
+.message-video video {
+    background: transparent !important;
+    border: none;
+}
+
+.message-media-container {
+    background: transparent !important;
+    border: none;
 }

@@ -358,15 +358,16 @@
                 top: 20px;
                 right: 20px;
                 width: 350px;
-                background: var(--discord-darker, #2f3136);
-                border-radius: 10px;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+                background: var(--white, #ffffff);
+                border-radius: 12px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
                 z-index: 10000;
                 transform: translateX(400px);
                 transition: transform 0.3s ease;
                 overflow: hidden;
-                border: 1px solid var(--discord-border, #40444b);
-                color: var(--discord-text, #ffffff);
+                border: 1px solid var(--border-color, #E9ECEF);
+                color: var(--text-dark, #212529);
+                font-family: 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif;
             }
             
             .message-notification.show {
@@ -377,7 +378,8 @@
                 display: flex;
                 align-items: center;
                 padding: 15px;
-                border-bottom: 1px solid var(--discord-border, #40444b);
+                border-bottom: 1px solid var(--border-color, #E9ECEF);
+                background: var(--white, #ffffff);
             }
             
             .notification-avatar {
@@ -386,7 +388,8 @@
                 border-radius: 50%;
                 object-fit: cover;
                 margin-right: 15px;
-                border: 2px solid var(--primary-blue, #4a8cff);
+                border: 2px solid var(--primary-color, #FF6B35);
+                box-shadow: 0 2px 8px rgba(255, 107, 53, 0.2);
             }
             
             .notification-details {
@@ -396,14 +399,15 @@
             .notification-details h4 {
                 margin: 0 0 5px 0;
                 font-size: 16px;
-                color: var(--primary-blue, #4a8cff);
+                color: var(--primary-color, #FF6B35);
                 font-weight: 600;
             }
             
             .notification-details p {
                 margin: 0;
                 font-size: 14px;
-                color: var(--discord-text-muted, #b9bbbe);
+                color: var(--text-muted, #6C757D);
+                line-height: 1.4;
             }
             
             .notification-close {
@@ -411,7 +415,7 @@
                 border: none;
                 font-size: 20px;
                 cursor: pointer;
-                color: var(--discord-text-muted, #b9bbbe);
+                color: var(--text-muted, #6C757D);
                 padding: 0;
                 width: 24px;
                 height: 24px;
@@ -423,21 +427,22 @@
             }
             
             .notification-close:hover {
-                color: var(--discord-text, #ffffff);
-                background-color: var(--discord-dark, #36393f);
+                color: var(--primary-color, #FF6B35);
+                background-color: var(--orange-pastel, #FFE8E0);
             }
             
             .notification-actions {
                 display: flex;
-                padding: 10px 15px;
+                padding: 12px 15px;
                 gap: 10px;
+                background: var(--white-smoke, #F8F9FA);
             }
             
             .notification-action {
-                flex: 2;
-                padding: 4px 4px;
+                flex: 1;
+                padding: 8px 12px;
                 border: none;
-                border-radius: 5px;
+                border-radius: 8px;
                 cursor: pointer;
                 font-size: 14px;
                 font-weight: 600;
@@ -445,35 +450,133 @@
             }
             
             .notification-action.view-chat {
-                background-color: var(--primary-blue, #4a8cff);
+                background: linear-gradient(135deg, var(--primary-color, #FF6B35), var(--orange-light, #FF8E53));
                 color: white;
+                box-shadow: 0 2px 8px rgba(255, 107, 53, 0.3);
             }
             
             .notification-action.view-chat:hover {
-                background-color: var(--accent-blue, #5e9cff);
+                background: linear-gradient(135deg, var(--orange-dark, #E55A2B), var(--primary-color, #FF6B35));
                 transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
             }
             
             .notification-action.mark-read {
-                background-color: var(--discord-dark, #36393f);
-                color: var(--discord-text, #ffffff);
-                border: 1px solid var(--discord-border, #40444b);
+                background-color: var(--white, #ffffff);
+                color: var(--text-dark, #212529);
+                border: 1px solid var(--border-color, #E9ECEF);
             }
             
             .notification-action.mark-read:hover {
-                background-color: var(--discord-border, #40444b);
+                background-color: var(--orange-pastel, #FFE8E0);
+                border-color: var(--primary-color, #FF6B35);
+                color: var(--primary-color, #FF6B35);
                 transform: translateY(-2px);
             }
             
+            /* Animation for notification appearance */
+            @keyframes notificationSlideIn {
+                from {
+                    transform: translateX(400px);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+            
+            .message-notification.show {
+                animation: notificationSlideIn 0.3s ease-out;
+            }
+            
+            /* Hover effect for entire notification */
+            .message-notification:hover {
+                box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+                transform: translateX(0) translateY(-2px);
+            }
+            
+            /* Responsive design */
             @media (max-width: 480px) {
                 .message-notification {
                     width: calc(100% - 40px);
                     right: 20px;
                     left: 20px;
+                    max-width: none;
                 }
                 
                 .notification-actions {
                     flex-direction: row;
+                }
+                
+                .notification-action {
+                    font-size: 13px;
+                    padding: 10px 8px;
+                }
+            }
+            
+            @media (max-width: 360px) {
+                .notification-content {
+                    padding: 12px;
+                }
+                
+                .notification-actions {
+                    padding: 10px 12px;
+                }
+                
+                .notification-avatar {
+                    width: 35px;
+                    height: 35px;
+                    margin-right: 12px;
+                }
+                
+                .notification-details h4 {
+                    font-size: 15px;
+                }
+                
+                .notification-details p {
+                    font-size: 13px;
+                }
+            }
+            
+            /* Dark mode support */
+            @media (prefers-color-scheme: dark) {
+                .message-notification {
+                    background: var(--gray-dark, #495057);
+                    border-color: var(--gray-medium, #6C757D);
+                    color: var(--white, #ffffff);
+                }
+                
+                .notification-content {
+                    background: var(--gray-dark, #495057);
+                }
+                
+                .notification-details p {
+                    color: var(--gray-light, #E9ECEF);
+                }
+                
+                .notification-actions {
+                    background: var(--gray-medium, #6C757D);
+                }
+                
+                .notification-action.mark-read {
+                    background-color: var(--gray-dark, #495057);
+                    color: var(--white, #ffffff);
+                    border-color: var(--gray-medium, #6C757D);
+                }
+                
+                .notification-action.mark-read:hover {
+                    background-color: var(--orange-pastel, #FFE8E0);
+                    color: var(--primary-color, #FF6B35);
+                }
+                
+                .notification-close {
+                    color: var(--gray-light, #E9ECEF);
+                }
+                
+                .notification-close:hover {
+                    color: var(--primary-color, #FF6B35);
+                    background-color: rgba(255, 107, 53, 0.1);
                 }
             }
         `;

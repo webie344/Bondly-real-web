@@ -6,8 +6,7 @@ import {
     signInWithEmailAndPassword, 
     signOut, 
     onAuthStateChanged,
-    sendPasswordResetEmail,
-    sendEmailVerification
+    sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { 
     getFirestore, 
@@ -114,10 +113,6 @@ class LocalCache {
 }
 
 const cache = new LocalCache();
-
-// Verification constants
-const VERIFICATION_TIMEOUT_DAYS = 3;
-const VERIFICATION_TIMEOUT_MS = VERIFICATION_TIMEOUT_DAYS * 24 * 60 * 60 * 1000;
 
 // State variables for reactions and replies
 let selectedMessageForReaction = null;
@@ -507,138 +502,20 @@ function logError(error, context = '') {
     console.error(`[${new Date().toISOString()}] Error${context ? ` in ${context}` : ''}:`, error);
 }
 
-// Enhanced verification handling
+// SIMPLIFIED: Removed all verification handling - users can use the app immediately
 async function handleUserVerification(user) {
-    try {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        
-        if (!userDoc.exists()) {
-            // User document doesn't exist yet - wait for ensureUserDocument to create it
-            console.log('User document not found, waiting for creation...');
-            return;
-        }
-
-        const userData = userDoc.data();
-        
-        // Check if user is verified but still marked as disabled
-        if (user.emailVerified && userData.accountDisabled) {
-            console.log('User verified but account disabled - re-enabling');
-            await updateDoc(doc(db, 'users', user.uid), {
-                accountDisabled: false,
-                reenabledAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-            });
-            return;
-        }
-        
-        // Check if account is disabled
-        if (userData.accountDisabled) {
-            // Don't redirect immediately - let the user see the disabled page
-            if (!window.location.pathname.includes('disabled.html')) {
-                localStorage.setItem('disabledUserEmail', user.email);
-                localStorage.setItem('disabledUserId', user.uid);
-                window.location.href = 'disabled.html';
-            }
-            return;
-        }
-
-        // Check verification status for unverified users
-        if (!user.emailVerified) {
-            const now = new Date().getTime();
-            const accountCreatedAt = userData.createdAt?.toDate?.()?.getTime() || now;
-            const timeSinceCreation = now - accountCreatedAt;
-
-            if (timeSinceCreation > VERIFICATION_TIMEOUT_MS) {
-                // Account not verified within 3 days - disable it
-                await updateDoc(doc(db, 'users', user.uid), {
-                    accountDisabled: true,
-                    disabledAt: serverTimestamp(),
-                    updatedAt: serverTimestamp()
-                });
-                
-                if (!window.location.pathname.includes('disabled.html')) {
-                    localStorage.setItem('disabledUserEmail', user.email);
-                    localStorage.setItem('disabledUserId', user.uid);
-                    window.location.href = 'disabled.html';
-                }
-                return;
-            }
-
-            // Send verification email if not already sent recently
-            await sendVerificationEmailIfNeeded(user);
-        }
-    } catch (error) {
-        console.error('Error handling verification:', error);
-    }
+    // No verification required - users can use the app immediately
+    console.log('User authenticated:', user.email);
 }
 
-async function sendVerificationEmailIfNeeded(user) {
-    try {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        if (userDoc.exists()) {
-            const userData = userDoc.data();
-            const lastSent = userData.verificationSentAt?.toDate?.()?.getTime() || 0;
-            const now = new Date().getTime();
-            const oneHour = 60 * 60 * 1000;
-
-            if (now - lastSent < oneHour) {
-                return; // Sent recently
-            }
-        }
-
-        await sendEmailVerification(user);
-
-        await updateDoc(doc(db, 'users', user.uid), {
-            verificationSentAt: serverTimestamp()
-        });
-
-        console.log('Verification email sent successfully');
-        
-    } catch (error) {
-        console.error('Error sending verification email:', error);
-    }
-}
-
-// Enhanced login with verification check
+// SIMPLIFIED: Login without verification checks
 async function enhancedLogin(email, password) {
     try {
         console.log('Attempting login for:', email);
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
         
-        console.log('Login successful, checking account status...');
-        
-        // Store user info immediately
-        localStorage.setItem('disabledUserEmail', user.email);
-        localStorage.setItem('disabledUserId', user.uid);
-        
-        // Check if account is disabled
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        if (userDoc.exists()) {
-            const userData = userDoc.data();
-            
-            // Check if user is verified but still marked as disabled
-            if (user.emailVerified && userData.accountDisabled) {
-                console.log('User is verified but account is still marked as disabled. Re-enabling...');
-                await updateDoc(doc(db, 'users', user.uid), {
-                    accountDisabled: false,
-                    reenabledAt: serverTimestamp(),
-                    updatedAt: serverTimestamp()
-                });
-                return true;
-            }
-            
-            // Check if account is still disabled
-            if (userData.accountDisabled) {
-                console.log('Account is disabled, redirecting...');
-                if (!window.location.pathname.includes('disabled.html')) {
-                    window.location.href = 'disabled.html';
-                }
-                return false;
-            }
-        }
-        
-        console.log('Account is active');
+        console.log('Login successful');
         return true;
     } catch (error) {
         console.error('Login error:', error);
@@ -849,7 +726,347 @@ document.addEventListener('DOMContentLoaded', () => {
             0%, 100% { height: 5px; }
             50% { height: 15px; }
         }
-        
+        /* FIXED: Video message styles for better appearance */
+.video-message {
+    max-width: 300px;
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+    background: #000;
+    margin: 5px 0;
+}
+
+.video-message video {
+    width: 100%;
+    height: auto;
+    max-height: 400px;
+    border-radius: 12px;
+    object-fit: cover;
+}
+
+.video-message-controls {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 20px;
+    padding: 5px 10px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.video-play-btn {
+    background: none;
+    border: none;
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+}
+
+.video-duration {
+    color: white;
+    font-size: 12px;
+    margin-left: 5px;
+}
+
+/* FIXED: Reply preview styles for better readability */
+.reply-preview {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    background: white; /* Dark background for contrast */
+    border-left: 4px solid var(--accent-color);
+    margin-bottom: 10px;
+    border-radius: 8px;
+    border: none;
+}
+
+.reply-preview-content {
+    flex: 1;
+    margin-left: 10px;
+    overflow: hidden;
+}
+
+.reply-preview-text {
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: black; /* Light gray for better readability */
+    font-weight: 500;
+}
+
+.reply-preview-name {
+    font-size: 12px;
+    font-weight: bold;
+    color: black;
+    margin-bottom: 2px;
+}
+
+.reply-preview-cancel {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 5px;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+
+.reply-preview-cancel:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Enhanced message reply indicator in chat */
+.reply-indicator {
+    font-size: 12px;
+    color:white;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 500;
+}
+
+.reply-indicator i {
+    font-size: 10px;
+}
+
+.reply-message-preview {
+    background: rgba(255, 255, 255, 0.1);
+    border-left: 2px solid var(--accent-color);
+    padding: 6px 10px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    font-size: 12px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #ccc;
+}
+
+/* Improved video recording preview */
+.video-preview {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: black;
+    z-index: 10000;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.video-preview video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.video-preview-controls {
+    position: absolute;
+    bottom: 40px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    padding: 20px;
+}
+
+.video-preview-btn {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 20px;
+    transition: background-color 0.2s;
+}
+
+.video-preview-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Better video recording indicator */
+.video-recording-indicator {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 15px;
+    background: #2a2a2a;
+    border-radius: 25px;
+    margin: 10px 0;
+    border: 1px solid #444;
+}
+
+.video-recording-timer {
+    font-size: 14px;
+    color: #ff4444;
+    font-weight: bold;
+}
+
+.video-recording-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.recording-dot {
+    width: 12px;
+    height: 12px;
+    background-color: #ff4444;
+    border-radius: 50%;
+    animation: recording-pulse 1.5s infinite;
+}
+
+@keyframes recording-pulse {
+    0%, 100% { 
+        opacity: 1; 
+        transform: scale(1);
+    }
+    50% { 
+        opacity: 0.3; 
+        transform: scale(0.8);
+    }
+}
+
+/* Improved voice message styles */
+.voice-message {
+    max-width: 280px;
+    padding: 12px 15px;
+    border-radius: 20px;
+    margin: 5px 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--accent-color);
+}
+
+.voice-message.sent {
+    background: var(--accent-color);
+    color: white;
+    align-self: flex-end;
+}
+
+.voice-message.received {
+    background: #3a3a3a;
+    color: white;
+    align-self: flex-start;
+}
+
+.voice-message-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+}
+
+.voice-message-play-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    border-radius: 50%;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 8px;
+    width: 35px;
+    height: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.voice-message-play-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.voice-message-duration {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.8);
+    min-width: 40px;
+}
+
+.waveform {
+    height: 25px;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2px;
+}
+
+.waveform-bar {
+    background-color: currentColor;
+    width: 3px;
+    border-radius: 3px;
+    transition: height 0.2s ease;
+    flex: 1;
+}
+
+.waveform-bar.active {
+    animation: waveform-animation 1.2s infinite ease-in-out;
+}
+
+@keyframes waveform-animation {
+    0%, 100% { height: 5px; }
+    50% { height: 15px; }
+}
+
+/* Message image improvements */
+.message-image {
+    max-width: 300px;
+    max-height: 400px;
+    border-radius: 12px;
+    object-fit: cover;
+}
+
+/* Responsive video styles */
+@media (max-width: 768px) {
+    .video-message {
+        max-width: 300px;
+    }
+    
+    .video-message video {
+        max-height: 300px;
+    }
+    
+    .message-image {
+        max-width: 250px;
+        max-height: 300px;
+    }
+}
+
+@media (max-width: 480px) {
+    .video-message {
+        max-width: 300px;
+    }
+    
+    .video-message video {
+        max-height: 300px;
+    }
+    
+    .message-image {
+        max-width: 200px;
+        max-height: 250px;
+    }
+}
         /* Video message styles */
         .video-message {
             max-width: auto;
@@ -861,6 +1078,7 @@ document.addEventListener('DOMContentLoaded', () => {
             width: auto;
             height: 400px;
             border-radius: 12px;
+            padding-top:2px;
         }
         .video-message-controls {
             position: absolute;
@@ -914,8 +1132,8 @@ document.addEventListener('DOMContentLoaded', () => {
             position: absole;
             bottom: 10px;
             right: 10px;
-            width: 10px;
-            height: 10px;
+            width: 15px;
+            height: 15px;
             border-radius: 50%;
             border: 2px solid white;
         }
@@ -1000,7 +1218,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .reply-preview-name {
             font-size: 12px;
             font-weight: bold;
-            color: var(--accent-color);
+            color: black;
         }
         .reply-preview-cancel {
             background: none;
@@ -1014,7 +1232,7 @@ document.addEventListener('DOMContentLoaded', () => {
         /* Message context menu */
         .message-context-menu {
             position: absolute;
-            background: white;
+            background:black;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             z-index: 100;
@@ -1130,45 +1348,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cursor: not-allowed;
         }
         
-        /* Video recording preview */
-        .video-preview {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: black;
-            z-index: 10000;
-            display: none;
-            flex-direction: column;
-        }
-        .video-preview video {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-        }
-        .video-preview-controls {
-            position: absolute;
-            bottom: 20px;
-            left: 0;
-            right: 0;
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-        }
-        .video-preview-btn {
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            display: flex;
-            alignItems: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 20px;
-        }
+
         
         @keyframes pulse {
             0%, 100% { opacity: 1; }
@@ -1242,8 +1422,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Ensure user document exists
             ensureUserDocument(user).then(() => {
-                // Handle verification status
-                handleUserVerification(user);
+                // SIMPLIFIED: No verification handling needed
                 
                 // Load user's chat points
                 loadUserChatPoints();
@@ -1362,8 +1541,7 @@ async function ensureUserDocument(user) {
                 profileComplete: false,
                 chatPoints: 12, // Give new users 12 chat points
                 paymentHistory: [],
-                accountDisabled: false,
-                verificationSentAt: serverTimestamp()
+                // REMOVED: accountDisabled and verification fields
             });
         }
         return true;
@@ -3193,16 +3371,13 @@ function initSignupPage() {
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
                 const user = userCredential.user;
                 
-                // Send email verification
-                await sendEmailVerification(user);
+                // SIMPLIFIED: No email verification required
+                showNotification('Account created successfully!', 'success');
                 
-                // REMOVED: User document creation - let ensureUserDocument handle it
-                
-                // Show the alert BEFORE any redirects can happen
-                alert('IMPORTANT: Verification email sent!\n\nPlease check your email (including SPAM folder) for the verification link.\n\nYou MUST verify your email within 3 days or your account will be disabled.');
-                
-                // Now redirect to dashboard
-                window.location.href = 'dashboard.html';
+                // Redirect to dashboard immediately
+                setTimeout(() => {
+                    window.location.href = 'dashboard.html';
+                }, 1500);
                 
             } catch (error) {
                 logError(error, 'signup');
