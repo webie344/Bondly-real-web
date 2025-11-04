@@ -1164,7 +1164,7 @@ body.account-page .account-container {
     gap: 1rem;
     cursor: pointer;
     transition: var(--transition);
-    border: 1px solid var(--border-color);
+    
 }
 
 .message-card:hover {

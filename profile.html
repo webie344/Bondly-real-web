@@ -434,10 +434,8 @@
                         <span class="online-status" id="onlineStatus"><i class="fas fa-circle"></i> Online</span>
                     </div>
                 </div>
-                <button class="btn-social" id="followProfileBtn">
-                    <i class="fas fa-user-plus"></i> Follow
-                </button>
             </div>
+            
             
             <!-- Social Media Links Section -->
             <div class="social-links-section" id="socialLinksSection">
@@ -514,30 +512,29 @@
     import { userDisplayManager } from './userdisplay.js';
 
     document.addEventListener('DOMContentLoaded', async function() {
-        console.log('🎯 Profile page loaded - initializing display system');
         
         // Get the profile user ID from URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         const profileUserId = urlParams.get('id');
-        console.log('📋 Profile User ID from URL:', profileUserId);
+        
         
         const applyProfileDisplay = async () => {
             if (window.userDisplayManager) {
-                console.log('✅ userDisplayManager found');
+                
                 
                 try {
                     if (profileUserId) {
-                        console.log('👥 Applying display for profile user:', profileUserId);
+                        
                         await window.userDisplayManager.applyDisplayToUserProfile(profileUserId);
                     } else {
-                        console.log('👤 Applying display for current user');
+                        
                         window.userDisplayManager.applyDisplayToProfile();
                     }
                 } catch (error) {
                     console.error('❌ Error applying profile display:', error);
                 }
             } else {
-                console.log('⏳ userDisplayManager not ready, retrying...');
+                
                 setTimeout(applyProfileDisplay, 500);
             }
         };
