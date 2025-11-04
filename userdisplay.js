@@ -1,4 +1,4 @@
-// User Display Configuration - COMPLETE FIXED VERSION WITH CRISP ANIMATIONS
+// User Display Configuration - PROFILE CARD ONLY VERSION (PROPER ANIMATIONS)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { 
     getFirestore, 
@@ -27,8 +27,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-
-console.log('UserDisplay: Firebase initialized');
 
 // Available wallpapers with direct image URLs
 const AVAILABLE_WALLPAPERS = [
@@ -180,11 +178,6 @@ const AVAILABLE_ANIMATIONS = [
 
 class UserDisplayManager {
     constructor(db, currentUser) {
-        console.log('UserDisplayManager constructor called', { 
-            db: !!db, 
-            currentUser: !!currentUser,
-            userId: currentUser?.uid 
-        });
         this.db = db;
         this.currentUser = currentUser;
         this.currentDisplay = null;
@@ -192,95 +185,93 @@ class UserDisplayManager {
         this.initialized = false;
         this.activeAnimations = new Map();
         this.cleanupTimeout = null;
+        this.isMobile = this.detectMobile();
         
         this.initializeManager();
-        this.injectCrispAnimationStyles();
+        this.injectProfileCardStyles();
     }
 
-    // NEW: Inject styles to force crisp animations
-    injectCrispAnimationStyles() {
-        if (document.getElementById('crisp-animation-styles')) return;
+    detectMobile() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }
+
+    // NEW: Inject styles specifically for profile card effects
+    injectProfileCardStyles() {
+        if (document.getElementById('profile-card-styles')) return;
         
         const style = document.createElement('style');
-        style.id = 'crisp-animation-styles';
+        style.id = 'profile-card-styles';
         style.textContent = `
-            /* Force animations to be crisp and clear */
-            #profile-animation,
-            #profile-animation canvas,
-            #profile-animation div,
-            .user-display-animation,
-            .user-display-animation canvas,
-            .user-display-animation div {
-                image-rendering: -webkit-optimize-contrast !important;
-                image-rendering: crisp-edges !important;
-                image-rendering: pixelated !important;
-                -webkit-font-smoothing: antialiased !important;
-                -moz-osx-font-smoothing: grayscale !important;
-                transform: translateZ(0) !important;
-                backface-visibility: hidden !important;
-                perspective: 1000 !important;
-                will-change: transform !important;
-            }
-
-            /* Ensure canvas elements are high quality */
-            #profile-animation canvas,
-            .user-display-animation canvas {
+            /* Profile card container for effects */
+            .profile-card-effects-container {
+                position: relative !important;
                 width: 100% !important;
                 height: 100% !important;
-                display: block !important;
+                border-radius: 20px !important;
+                overflow: hidden !important;
+                isolation: isolate !important;
             }
 
-            /* Remove any blur effects that might be applied to animation containers */
-            #profile-animation,
-            .user-display-animation,
-            [data-animation-id] {
+            /* Profile card background with blur effect */
+            .profile-card-background {
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+                border-radius: 20px !important;
+                z-index: -1 !important;
+                backdrop-filter: blur(10px) !important;
+                -webkit-backdrop-filter: blur(10px) !important;
+                background: rgba(255, 255, 255, 0.1) !important;
+                overflow: hidden !important;
+            }
+
+            /* Profile card content - stays on top */
+            .profile-card-content {
+                position: relative !important;
+                z-index: 10 !important;
+                width: 100% !important;
+                height: 100% !important;
+            }
+
+            /* Wallpaper for profile card only */
+            .profile-card-wallpaper {
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+                border-radius: 20px !important;
+                background-size: cover !important;
+                background-position: center !important;
+                background-repeat: no-repeat !important;
+                z-index: -2 !important;
+                opacity: 0.7 !important;
+            }
+
+            /* Animation for profile card only - NO BLUR */
+            .profile-card-animation {
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+                border-radius: 20px !important;
+                z-index: -3 !important;
+                overflow: hidden !important;
+                pointer-events: none !important;
                 backdrop-filter: none !important;
-                filter: none !important;
-                -webkit-backdrop-filter: none !important;
-                blur: none !important;
-            }
-
-            /* Make sure the animation container doesn't have any transforms that cause blur */
-            #profile-animation * {
-                transform: none !important;
-            }
-
-            /* High performance rendering for animations */
-            #profile-animation,
-            .user-display-animation {
-                transform: translate3d(0, 0, 0) !important;
-            }
-
-            /* Fix for profile cards - ensure they don't blur the background */
-            body.profile-page .profile-details,
-            body.profile-page .profile-card,
-            body.account-page .account-main,
-            body.account-page .account-sidebar,
-            body.mingle-page .profile-card {
-                background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 248, 250, 0.95)) !important;
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
-                filter: none !important;
-                border: 1px solid rgba(255, 107, 157, 0.3) !important;
-                box-shadow: 0 8px 32px rgba(255, 107, 157, 0.15) !important;
-            }
-
-            /* Ensure no parent elements are causing blur */
-            .profile-view-container,
-            .account-container,
-            .mingle-container {
-                backdrop-filter: none !important;
                 -webkit-backdrop-filter: none !important;
                 filter: none !important;
             }
 
-            /* High DPI display optimization */
-            @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-                #profile-animation canvas,
-                .user-display-animation canvas {
-                    image-rendering: -webkit-optimize-contrast !important;
-                    image-rendering: crisp-edges !important;
-                }
+            /* Ensure profile card has proper styling */
+            .profile-card, .profile-container, .user-profile, .profile-view-container, .profile-details {
+                position: relative !important;
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
             }
 
             /* Animation styles for floating hearts */
@@ -290,7 +281,7 @@ class UserDisplayManager {
                     opacity: 0.7;
                 }
                 100% {
-                    transform: translateX(var(--heart-translate-x, 0px)) translateY(-120vh) rotate(var(--heart-rotate, 0deg)) scale(1.2);
+                    transform: translateX(var(--heart-translate-x, 0px)) translateY(-100%) rotate(var(--heart-rotate, 0deg)) scale(1.2);
                     opacity: 0;
                 }
             }
@@ -307,50 +298,42 @@ class UserDisplayManager {
                 }
             }
 
-            /* Preview animations */
-            @keyframes floatHeartPreview {
-                0% {
-                    transform: translateY(0) scale(1);
-                    opacity: 1;
-                }
-                100% {
-                    transform: translateY(-100px) scale(0.5);
-                    opacity: 0;
-                }
+            /* Ensure crisp rendering for profile card animations */
+            .profile-card-animation canvas {
+                image-rendering: -webkit-optimize-contrast !important;
+                image-rendering: crisp-edges !important;
+                border-radius: 20px !important;
             }
 
-            @keyframes sparklePreview {
-                0%, 100% { 
-                    opacity: 0; 
-                    transform: scale(0.8); 
+            /* Mobile optimizations */
+            @media (max-width: 768px) {
+                .profile-card-animation {
+                    transform: translateZ(0) !important;
+                    backface-visibility: hidden !important;
+                    perspective: 1000 !important;
                 }
-                50% { 
-                    opacity: 1; 
-                    transform: scale(1.2); 
+                
+                .profile-card-wallpaper {
+                    filter: none !important;
                 }
             }
         `;
         document.head.appendChild(style);
-        console.log('✅ Injected crisp animation styles');
     }
 
     async initializeManager() {
         try {
-            console.log('🔄 Initializing UserDisplayManager...');
             const settings = await this.loadUserDisplay();
             this.currentDisplay = settings;
             this.initialized = true;
-            console.log('✅ UserDisplayManager initialized with settings:', settings);
             
             // Apply display immediately if on profile page
             if (this.isProfilePage()) {
-                console.log('🎯 Profile page detected, applying display...');
                 setTimeout(() => {
                     this.applyDisplayToProfile();
                 }, 500);
             }
         } catch (error) {
-            console.error('❌ Error initializing UserDisplayManager:', error);
             this.currentDisplay = this.getDefaultSettings();
             this.initialized = true;
         }
@@ -375,18 +358,9 @@ class UserDisplayManager {
                document.querySelector('.profile-details') !== null;
     }
 
-    isAccountPage() {
-        return window.location.pathname.includes('account.html') || 
-               window.location.pathname.endsWith('account.html') ||
-               document.querySelector('.account-settings') !== null;
-    }
-
     async loadUserDisplay() {
         try {
-            console.log('🔍 Loading display settings for user:', this.currentUser?.uid);
-            
             if (!this.currentUser || !this.currentUser.uid) {
-                console.error('❌ No current user found');
                 return this.getDefaultSettings();
             }
 
@@ -396,21 +370,16 @@ class UserDisplayManager {
             if (userSnap.exists()) {
                 const userData = userSnap.data();
                 const displaySettings = userData.displaySettings;
-                console.log('📄 User document exists. Display settings:', displaySettings);
                 
                 if (displaySettings && this.hasValidCustomSettings(displaySettings)) {
-                    console.log('✅ Found custom display settings:', displaySettings);
                     return displaySettings;
                 } else {
-                    console.log('ℹ️ No custom display settings found, using defaults');
                     return this.getDefaultSettings();
                 }
             } else {
-                console.log('📝 No user document found, using default settings');
                 return this.getDefaultSettings();
             }
         } catch (error) {
-            console.error('❌ Error loading user display:', error);
             return this.getDefaultSettings();
         }
     }
@@ -430,15 +399,11 @@ class UserDisplayManager {
 
     async loadUserDisplayForProfile(userId) {
         try {
-            console.log('🔍 Loading display settings for profile user:', userId);
-            
             if (!userId) {
-                console.error('❌ No user ID provided');
                 return this.getDefaultSettings();
             }
 
             if (userId === this.currentUser?.uid) {
-                console.log('👤 Viewing own profile, using current settings');
                 return this.currentDisplay || this.getDefaultSettings();
             }
 
@@ -450,15 +415,12 @@ class UserDisplayManager {
                 const displaySettings = userData.displaySettings;
                 
                 if (displaySettings && this.hasValidCustomSettings(displaySettings)) {
-                    console.log('✅ Found custom profile user display settings:', displaySettings);
                     return displaySettings;
                 }
             }
             
-            console.log('ℹ️ No custom display settings found for profile user, using defaults');
             return this.getDefaultSettings();
         } catch (error) {
-            console.error('❌ Error loading profile user display:', error);
             return this.getDefaultSettings();
         }
     }
@@ -481,23 +443,16 @@ class UserDisplayManager {
 
     async saveDisplaySettings(settings) {
         try {
-            console.log('💾 Saving display settings:', settings);
-            
             if (!this.currentUser || !this.currentUser.uid) {
-                console.error('❌ No current user found');
                 return false;
             }
 
-            // Clear any pending cleanup
             if (this.cleanupTimeout) {
                 clearTimeout(this.cleanupTimeout);
                 this.cleanupTimeout = null;
             }
 
-            // IMPORTANT: Clear both wallpaper and animation when switching types
             if (settings.wallpaper && settings.animation) {
-                console.log('🔄 Switching from animation to wallpaper (or vice versa)');
-                // If setting wallpaper, clear animation and vice versa
                 if (settings.wallpaper && this.currentDisplay?.animation) {
                     settings.animation = null;
                 } else if (settings.animation && this.currentDisplay?.wallpaper) {
@@ -506,12 +461,10 @@ class UserDisplayManager {
             }
 
             if (settings.wallpaper && !this.isValidWallpaper(settings.wallpaper)) {
-                console.warn('⚠️ Invalid wallpaper ID, setting to null:', settings.wallpaper);
                 settings.wallpaper = null;
             }
 
             if (settings.animation && !this.isValidAnimation(settings.animation)) {
-                console.warn('⚠️ Invalid animation ID, setting to null:', settings.animation);
                 settings.animation = null;
             }
 
@@ -532,11 +485,8 @@ class UserDisplayManager {
             }
             
             this.currentDisplay = settings;
-            console.log('✅ Display settings saved successfully');
             
-            // Apply new settings to profile page if we're on it
             if (this.isProfilePage()) {
-                console.log('🎯 Applying new settings to current profile page...');
                 setTimeout(() => {
                     this.applyDisplayToProfile();
                 }, 100);
@@ -544,567 +494,160 @@ class UserDisplayManager {
             
             return true;
         } catch (error) {
-            console.error('❌ Error saving display settings:', error);
             return false;
         }
     }
 
+    // NEW: Setup profile card structure for effects
+    setupProfileCardStructure() {
+        const profileCards = document.querySelectorAll('.profile-card, .profile-container, .user-profile, .profile-view-container, .profile-details');
+        
+        profileCards.forEach(card => {
+            // Skip if already structured
+            if (card.querySelector('.profile-card-effects-container')) {
+                return;
+            }
+
+            const originalContent = card.innerHTML;
+            
+            // Wrap in effects container
+            card.innerHTML = `
+                <div class="profile-card-effects-container">
+                    <div class="profile-card-background"></div>
+                    <div class="profile-card-content">
+                        ${originalContent}
+                    </div>
+                </div>
+            `;
+            
+            // Ensure card has proper styling
+            card.style.cssText += `
+                background: transparent !important;
+                border-radius: 20px !important;
+                overflow: hidden !important;
+                position: relative !important;
+            `;
+        });
+    }
+
     applyDisplayToProfile() {
         if (this.isApplying) {
-            console.log('⚠️ Display application already in progress, skipping...');
             return;
         }
         
         this.isApplying = true;
-        console.log('🎨 === APPLYING DISPLAY TO PROFILE ===');
-        console.log('Current display settings:', this.currentDisplay);
         
         try {
+            // Setup profile card structure first
+            this.setupProfileCardStructure();
+            
             // Clear everything first
             this.removeExistingAnimations();
 
-            // Small delay to ensure cleanup is complete
             setTimeout(() => {
-                // Apply wallpaper OR animation (not both)
+                // Apply wallpaper OR animation (not both) to profile card only
                 if (this.currentDisplay?.wallpaper && this.isValidWallpaper(this.currentDisplay.wallpaper)) {
-                    console.log('🖼️ Applying custom wallpaper:', this.currentDisplay.wallpaper);
-                    this.applyWallpaper(this.currentDisplay.wallpaper);
+                    this.applyWallpaperToProfileCard(this.currentDisplay.wallpaper);
                 } else if (this.currentDisplay?.animation && this.isValidAnimation(this.currentDisplay.animation)) {
-                    console.log('✨ Applying custom animation:', this.currentDisplay.animation);
-                    this.applyAnimation(this.currentDisplay.animation);
-                } else {
-                    console.log('🎨 No custom display, using default theme');
+                    this.applyAnimationToProfileCard(this.currentDisplay.animation);
                 }
 
-                console.log('✅ === DISPLAY APPLY COMPLETE ===');
                 this.isApplying = false;
             }, 50);
             
         } catch (error) {
-            console.error('❌ Error applying display:', error);
             this.isApplying = false;
         }
     }
 
-    // Enhanced profile card styling with themed effects
-    styleProfileCardForWallpaper(wallpaperId) {
-        const profileCards = document.querySelectorAll('.profile-card, .profile-container, .user-profile, .profile-view-container, .profile-details');
+    // MODIFIED: Apply wallpaper to profile card only - NO BLUR ON MOBILE
+    applyWallpaperToProfileCard(wallpaperId) {
         const wallpaper = AVAILABLE_WALLPAPERS.find(w => w.id === wallpaperId);
-        
-        if (!wallpaper) return;
-
-        const theme = wallpaper.theme;
-        let cardStyle = '';
-
-        switch(theme) {
-            case 'blue':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(100, 150, 255, 0.15), rgba(70, 130, 255, 0.1)) !important;
-                    border: 1px solid rgba(100, 150, 255, 0.3) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(70, 130, 255, 0.15),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-                `;
-                break;
-            case 'purple':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(180, 100, 255, 0.15), rgba(150, 70, 255, 0.1)) !important;
-                    border: 1px solid rgba(180, 100, 255, 0.3) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(150, 70, 255, 0.15),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-                `;
-                break;
-            case 'green':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(100, 220, 150, 0.15), rgba(70, 200, 120, 0.1)) !important;
-                    border: 1px solid rgba(100, 220, 150, 0.3) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(70, 200, 120, 0.15),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-                `;
-                break;
-            case 'orange':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(255, 180, 100, 0.15), rgba(255, 150, 70, 0.1)) !important;
-                    border: 1px solid rgba(255, 180, 100, 0.3) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(255, 150, 70, 0.15),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-                `;
-                break;
-            case 'fire':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(255, 100, 50, 0.15), rgba(255, 70, 30, 0.1)) !important;
-                    border: 1px solid rgba(255, 100, 50, 0.3) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(255, 70, 30, 0.15),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-                `;
-                break;
-            case 'cosmic':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(100, 70, 255, 0.15), rgba(70, 50, 220, 0.1)) !important;
-                    border: 1px solid rgba(100, 70, 255, 0.3) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(70, 50, 220, 0.15),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-                `;
-                break;
-            default:
-                cardStyle = `
-                    background: rgba(255, 255, 255, 0.12) !important;
-                    border: 1px solid rgba(255, 255, 255, 0.2) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(0, 0, 0, 0.1),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-                `;
-        }
-
-        profileCards.forEach(card => {
-            card.style.cssText += `
-                ${cardStyle}
-                border-radius: 20px !important;
-                position: relative !important;
-                z-index: 10 !important;
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
-            `;
-        });
-    }
-
-    styleProfileCardForAnimation(animationId) {
-        const profileCards = document.querySelectorAll('.profile-card, .profile-container, .user-profile, .profile-view-container, .profile-details');
-        const animation = AVAILABLE_ANIMATIONS.find(a => a.id === animationId);
-        
-        if (!animation) return;
-
-        const theme = animation.theme;
-        let cardStyle = '';
-
-        switch(theme) {
-            case 'fire':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(255, 100, 50, 0.18), rgba(255, 70, 30, 0.12)) !important;
-                    border: 1px solid rgba(255, 100, 50, 0.4) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(255, 70, 30, 0.2),
-                        0 0 20px rgba(255, 100, 50, 0.1),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
-                `;
-                break;
-            case 'cosmic':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(100, 70, 255, 0.18), rgba(70, 50, 220, 0.12)) !important;
-                    border: 1px solid rgba(100, 70, 255, 0.4) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(70, 50, 220, 0.2),
-                        0 0 20px rgba(100, 70, 255, 0.1),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
-                `;
-                break;
-            case 'romantic':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(255, 105, 180, 0.18), rgba(255, 70, 150, 0.12)) !important;
-                    border: 1px solid rgba(255, 105, 180, 0.4) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(255, 70, 150, 0.2),
-                        0 0 20px rgba(255, 105, 180, 0.1),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
-                `;
-                break;
-            case 'neon':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(0, 255, 255, 0.15), rgba(0, 200, 200, 0.1)) !important;
-                    border: 1px solid rgba(0, 255, 255, 0.4) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(0, 255, 255, 0.2),
-                        0 0 20px rgba(0, 255, 255, 0.1),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
-                `;
-                break;
-            case 'starry':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(100, 150, 255, 0.15), rgba(70, 120, 220, 0.1)) !important;
-                    border: 1px solid rgba(100, 150, 255, 0.3) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(70, 120, 220, 0.15),
-                        0 0 15px rgba(255, 255, 255, 0.1),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-                `;
-                break;
-            case 'magic':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(255, 215, 0, 0.15), rgba(255, 200, 0, 0.1)) !important;
-                    border: 1px solid rgba(255, 215, 0, 0.4) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(255, 215, 0, 0.2),
-                        0 0 20px rgba(255, 215, 0, 0.1),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
-                `;
-                break;
-            case 'gold':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(255, 215, 0, 0.18), rgba(218, 165, 32, 0.12)) !important;
-                    border: 1px solid rgba(255, 215, 0, 0.4) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(218, 165, 32, 0.2),
-                        0 0 20px rgba(255, 215, 0, 0.1),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
-                `;
-                break;
-            case 'aurora':
-                cardStyle = `
-                    background: linear-gradient(135deg, 
-                        rgba(100, 255, 200, 0.12),
-                        rgba(100, 200, 255, 0.1),
-                        rgba(200, 100, 255, 0.08)
-                    ) !important;
-                    border: 1px solid rgba(100, 255, 200, 0.3) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(100, 200, 255, 0.15),
-                        0 0 15px rgba(200, 100, 255, 0.1),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-                `;
-                break;
-            case 'matrix':
-                cardStyle = `
-                    background: linear-gradient(135deg, rgba(0, 255, 0, 0.12), rgba(0, 200, 0, 0.08)) !important;
-                    border: 1px solid rgba(0, 255, 0, 0.3) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(0, 255, 0, 0.15),
-                        0 0 10px rgba(0, 255, 0, 0.1),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-                `;
-                break;
-            case 'energy':
-                cardStyle = `
-                    background: linear-gradient(135deg, 
-                        rgba(255, 100, 100, 0.12),
-                        rgba(100, 255, 100, 0.1),
-                        rgba(100, 100, 255, 0.08)
-                    ) !important;
-                    border: 1px solid rgba(255, 100, 100, 0.3) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(100, 255, 100, 0.15),
-                        0 0 15px rgba(100, 100, 255, 0.1),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-                `;
-                break;
-            default:
-                cardStyle = `
-                    background: rgba(255, 255, 255, 0.15) !important;
-                    border: 1px solid rgba(255, 255, 255, 0.3) !important;
-                    box-shadow: 
-                        0 8px 32px rgba(0, 0, 0, 0.1),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-                `;
-        }
-
-        profileCards.forEach(card => {
-            card.style.cssText += `
-                ${cardStyle}
-                border-radius: 20px !important;
-                position: relative !important;
-                z-index: 10 !important;
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
-            `;
-        });
-    }
-
-    // Preview function for account page - ONLY in preview container
-    previewDisplay(settings, previewContainerId = 'displayPreview') {
-        console.log('👀 Previewing display settings:', settings);
-        
-        const previewContainer = document.getElementById(previewContainerId);
-        if (!previewContainer) {
-            console.error('❌ Preview container not found:', previewContainerId);
+        if (!wallpaper) {
             return;
         }
+
+        const profileCards = document.querySelectorAll('.profile-card-effects-container');
         
-        // Clear only the preview container, not the entire page
-        this.clearPreviewContainer(previewContainerId);
-        
-        // Small delay to ensure cleanup is complete
-        setTimeout(() => {
-            if (settings.wallpaper && this.isValidWallpaper(settings.wallpaper)) {
-                console.log('🖼️ Previewing wallpaper:', settings.wallpaper);
-                this.applyWallpaperPreview(settings.wallpaper, previewContainerId);
-            } else if (settings.animation && this.isValidAnimation(settings.animation)) {
-                console.log('✨ Previewing animation:', settings.animation);
-                this.applyAnimationPreview(settings.animation, previewContainerId);
-            } else {
-                console.log('🎨 No display settings to preview');
-                this.showNoSelectionMessage(previewContainerId);
+        profileCards.forEach(container => {
+            // Remove existing wallpaper
+            const existingWallpaper = container.querySelector('.profile-card-wallpaper');
+            if (existingWallpaper) {
+                existingWallpaper.remove();
             }
-        }, 50);
-    }
 
-    clearPreviewContainer(containerId) {
-        const container = document.getElementById(containerId);
-        if (container) {
-            // Remove only preview-specific elements
-            const previewElements = container.querySelectorAll('.preview-wallpaper, .preview-animation, .no-selection');
-            previewElements.forEach(element => {
-                if (element.parentNode) {
-                    element.remove();
-                }
-            });
+            const wallpaperElement = document.createElement('div');
+            wallpaperElement.className = 'profile-card-wallpaper';
+            wallpaperElement.setAttribute('data-wallpaper-id', wallpaperId);
             
-            // Clear any animation classes and styles
-            container.className = 'preview-container';
-            container.style.backgroundImage = 'none';
-            container.style.backgroundColor = '';
-            container.style.backgroundSize = '';
-            container.style.backgroundPosition = '';
-        }
+            // NO BLUR FILTER - this was causing the blurriness
+            wallpaperElement.style.cssText = `
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+                border-radius: 20px !important;
+                background-image: url('${wallpaper.url}') !important;
+                background-size: cover !important;
+                background-position: center !important;
+                background-repeat: no-repeat !important;
+                z-index: -2 !important;
+                opacity: 0.7 !important;
+            `;
+
+            container.appendChild(wallpaperElement);
+        });
     }
 
-    applyWallpaperPreview(wallpaperId, containerId) {
-        console.log('🎨 Applying wallpaper preview:', wallpaperId);
-        const wallpaper = AVAILABLE_WALLPAPERS.find(w => w.id === wallpaperId);
-        if (!wallpaper) {
-            console.error('❌ Wallpaper not found:', wallpaperId);
-            return;
-        }
-
-        const container = document.getElementById(containerId);
-        if (container) {
-            container.style.backgroundImage = `url('${wallpaper.url}')`;
-            container.style.backgroundSize = 'cover';
-            container.style.backgroundPosition = 'center';
-            container.style.backgroundColor = 'transparent';
-            
-            // Add fade-in effect
-            container.style.opacity = '0';
-            container.style.transition = 'opacity 0.3s ease-in-out';
-            setTimeout(() => {
-                container.style.opacity = '1';
-            }, 10);
-        }
-    }
-
-    applyAnimationPreview(animationId, containerId) {
-        console.log('✨ Applying animation preview:', animationId);
+    // MODIFIED: Apply animation to profile card only
+    applyAnimationToProfileCard(animationId) {
         const animation = AVAILABLE_ANIMATIONS.find(a => a.id === animationId);
         if (!animation) {
-            console.error('❌ Animation not found:', animationId);
             return;
         }
 
-        const container = document.getElementById(containerId);
-        if (container) {
-            // Add animation-specific class for preview styling
-            container.classList.add(`${animationId}-preview`);
-            
-            // Add fade-in effect
-            container.style.opacity = '0';
-            container.style.transition = 'opacity 0.3s ease-in-out';
-            setTimeout(() => {
-                container.style.opacity = '1';
-            }, 10);
-            
-            // For some animations, we might want to add additional preview elements
-            this.createAnimationPreviewElements(animationId, container);
-        }
-    }
-
-    createAnimationPreviewElements(animationId, container) {
-        // Add simple preview elements for animations
-        switch(animationId) {
-            case 'floating_hearts':
-                this.addFloatingHeartsPreview(container);
-                break;
-            case 'magic_sparkles':
-                this.addMagicSparklesPreview(container);
-                break;
-            // Add more animation previews as needed
-        }
-    }
-
-    addFloatingHeartsPreview(container) {
-        for (let i = 0; i < 3; i++) {
-            setTimeout(() => {
-                const heart = document.createElement('div');
-                heart.innerHTML = '💖';
-                heart.style.cssText = `
-                    position: absolute;
-                    font-size: 20px;
-                    left: ${20 + i * 30}%;
-                    top: 80%;
-                    animation: floatHeartPreview 3s ease-in forwards;
-                    pointer-events: none;
-                `;
-                container.appendChild(heart);
-
-                setTimeout(() => {
-                    if (heart.parentNode) heart.remove();
-                }, 3000);
-            }, i * 500);
-        }
-    }
-
-    addMagicSparklesPreview(container) {
-        for (let i = 0; i < 5; i++) {
-            setTimeout(() => {
-                const sparkle = document.createElement('div');
-                sparkle.innerHTML = '✨';
-                sparkle.style.cssText = `
-                    position: absolute;
-                    font-size: 16px;
-                    left: ${10 + i * 20}%;
-                    top: ${20 + i * 15}%;
-                    animation: sparklePreview 2s ease-in-out infinite;
-                    pointer-events: none;
-                `;
-                container.appendChild(sparkle);
-            }, i * 400);
-        }
-    }
-
-    showNoSelectionMessage(containerId) {
-        const container = document.getElementById(containerId);
-        if (container) {
-            const message = document.createElement('div');
-            message.className = 'no-selection';
-            message.textContent = 'Select a wallpaper or animation to see preview';
-            container.appendChild(message);
-            
-            // Add fade-in effect
-            message.style.opacity = '0';
-            message.style.transition = 'opacity 0.3s ease-in-out';
-            setTimeout(() => {
-                message.style.opacity = '1';
-            }, 10);
-        }
-    }
-
-    async applyDisplayToUserProfile(userId) {
-        if (this.isApplying) {
-            console.log('⚠️ Display application already in progress, skipping...');
-            return;
-        }
+        const profileCards = document.querySelectorAll('.profile-card-effects-container');
         
-        this.isApplying = true;
-        console.log('🎨 === APPLYING DISPLAY TO USER PROFILE ===', userId);
-        
-        try {
-            const profileSettings = await this.loadUserDisplayForProfile(userId);
-            console.log('📋 Profile user settings:', profileSettings);
+        profileCards.forEach(container => {
+            // Remove existing animation
+            const existingAnimation = container.querySelector('.profile-card-animation');
+            if (existingAnimation) {
+                existingAnimation.remove();
+            }
 
-            // Clear everything first
-            this.removeExistingAnimations();
+            const animationContainer = document.createElement('div');
+            animationContainer.className = 'profile-card-animation';
+            animationContainer.setAttribute('data-animation-id', animationId);
+            animationContainer.style.cssText = `
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+                border-radius: 20px !important;
+                pointer-events: none !important;
+                z-index: -3 !important;
+                overflow: hidden !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+                filter: none !important;
+            `;
 
-            // Apply after cleanup
-            setTimeout(() => {
-                // Apply wallpaper OR animation (not both)
-                if (profileSettings.wallpaper && this.isValidWallpaper(profileSettings.wallpaper)) {
-                    console.log('🖼️ Applying profile wallpaper:', profileSettings.wallpaper);
-                    this.applyWallpaper(profileSettings.wallpaper);
-                } else if (profileSettings.animation && this.isValidAnimation(profileSettings.animation)) {
-                    console.log('✨ Applying profile animation:', profileSettings.animation);
-                    this.applyAnimation(profileSettings.animation);
-                } else {
-                    console.log('🎨 No custom display for profile user');
-                }
-
-                console.log('✅ === USER PROFILE DISPLAY APPLY COMPLETE ===');
-                this.isApplying = false;
-            }, 50);
-            
-        } catch (error) {
-            console.error('❌ Error applying user profile display:', error);
-            this.isApplying = false;
-        }
-    }
-
-    applyWallpaper(wallpaperId) {
-        console.log('🎨 Applying wallpaper:', wallpaperId);
-        const wallpaper = AVAILABLE_WALLPAPERS.find(w => w.id === wallpaperId);
-        if (!wallpaper) {
-            console.error('❌ Wallpaper not found:', wallpaperId);
-            return;
-        }
-
-        const wallpaperElement = document.createElement('div');
-        wallpaperElement.id = 'profile-wallpaper';
-        wallpaperElement.className = 'user-display-wallpaper';
-        wallpaperElement.setAttribute('data-wallpaper-id', wallpaperId);
-        wallpaperElement.style.cssText = `
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            background-image: url('${wallpaper.url}') !important;
-            background-size: cover !important;
-            background-position: center !important;
-            background-repeat: no-repeat !important;
-            background-attachment: fixed !important;
-            z-index: -10000 !important;
-            opacity: 0.9 !important;
-            pointer-events: none !important;
-        `;
-
-        if (document.body) {
-            document.body.appendChild(wallpaperElement);
-            console.log('✅ Wallpaper applied:', wallpaper.name);
-            
-            // Add themed profile card styling
-            this.styleProfileCardForWallpaper(wallpaperId);
-        }
-    }
-
-    applyAnimation(animationId) {
-        console.log('✨ Applying animation:', animationId);
-        const animation = AVAILABLE_ANIMATIONS.find(a => a.id === animationId);
-        if (!animation) {
-            console.error('❌ Animation not found:', animationId);
-            return;
-        }
-
-        const animationContainer = document.createElement('div');
-        animationContainer.id = 'profile-animation';
-        animationContainer.className = 'user-display-animation';
-        animationContainer.setAttribute('data-animation-id', animationId);
-        // FIXED: Remove blur and ensure crisp rendering
-        animationContainer.style.cssText = `
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            pointer-events: none !important;
-            z-index: -9999 !important;
-            overflow: hidden !important;
-            backdrop-filter: none !important;
-            -webkit-backdrop-filter: none !important;
-            filter: none !important;
-            transform: translate3d(0, 0, 0) !important;
-        `;
-
-        if (document.body) {
-            document.body.appendChild(animationContainer);
+            container.appendChild(animationContainer);
             
             try {
-                this.createSpecificAnimation(animationId, animationContainer);
-                console.log('✅ Animation applied:', animation.name);
-                
-                // Add themed profile card styling for animations
-                this.styleProfileCardForAnimation(animationId);
+                this.createSpecificAnimationForProfileCard(animationId, animationContainer);
             } catch (error) {
-                console.error('❌ Error creating animation:', error);
                 if (animationContainer.parentNode) {
                     animationContainer.remove();
                 }
             }
-        }
+        });
     }
 
-    createSpecificAnimation(animationId, container) {
-        console.log('🎬 Creating specific animation:', animationId);
-        
+    // MODIFIED: Create REAL animations scaled for profile card with MOBILE OPTIMIZATIONS
+    createSpecificAnimationForProfileCard(animationId, container) {
         if (!this.activeAnimations) {
             this.activeAnimations = new Map();
         }
@@ -1113,51 +656,51 @@ class UserDisplayManager {
         
         switch(animationId) {
             case 'fire_glow':
-                stopAnimation = this.createFireGlowAnimation(container);
+                stopAnimation = this.createFireGlowAnimationForProfileCard(container);
                 break;
             case 'cosmic_energy':
-                stopAnimation = this.createCosmicEnergyAnimation(container);
+                stopAnimation = this.createCosmicEnergyAnimationForProfileCard(container);
                 break;
             case 'floating_hearts':
-                stopAnimation = this.createFloatingHeartsAnimation(container);
+                stopAnimation = this.createFloatingHeartsAnimationForProfileCard(container);
                 break;
             case 'neon_pulse':
-                stopAnimation = this.createNeonPulseAnimation(container);
+                stopAnimation = this.createNeonPulseAnimationForProfileCard(container);
                 break;
             case 'starry_night':
-                stopAnimation = this.createStarryNightAnimation(container);
+                stopAnimation = this.createStarryNightAnimationForProfileCard(container);
                 break;
             case 'magic_sparkles':
-                stopAnimation = this.createMagicSparklesAnimation(container);
+                stopAnimation = this.createMagicSparklesAnimationForProfileCard(container);
                 break;
             case 'liquid_gold':
-                stopAnimation = this.createLiquidGoldAnimation(container);
+                stopAnimation = this.createLiquidGoldAnimationForProfileCard(container);
                 break;
             case 'northern_lights':
-                stopAnimation = this.createNorthernLightsAnimation(container);
+                stopAnimation = this.createNorthernLightsAnimationForProfileCard(container);
                 break;
             case 'digital_matrix':
-                stopAnimation = this.createDigitalMatrixAnimation(container);
+                stopAnimation = this.createDigitalMatrixAnimationForProfileCard(container);
                 break;
             case 'energy_field':
-                stopAnimation = this.createEnergyFieldAnimation(container);
+                stopAnimation = this.createEnergyFieldAnimationForProfileCard(container);
                 break;
             default:
-                console.warn('⚠️ Unknown animation:', animationId);
+                // Unknown animation - use cosmic as fallback
+                stopAnimation = this.createCosmicEnergyAnimationForProfileCard(container);
         }
         
         this.activeAnimations.set(animationId, { container, stopAnimation });
     }
 
-    createFireGlowAnimation(container) {
+    // OPTIMIZED: Fire glow animation - REAL FIRE EFFECT
+    createFireGlowAnimationForProfileCard(container) {
         try {
             const canvas = document.createElement('canvas');
-            // Set high resolution for crisp rendering
-            const pixelRatio = window.devicePixelRatio || 1;
-            canvas.width = (container.clientWidth || window.innerWidth) * pixelRatio;
-            canvas.height = (container.clientHeight || window.innerHeight) * pixelRatio;
+            const pixelRatio = this.isMobile ? 1 : 1;
+            canvas.width = container.clientWidth * pixelRatio;
+            canvas.height = container.clientHeight * pixelRatio;
             
-            // FIXED: Force crisp canvas rendering
             canvas.style.cssText = `
                 position: absolute;
                 top: 0;
@@ -1165,34 +708,24 @@ class UserDisplayManager {
                 width: 100%;
                 height: 100%;
                 display: block;
-                image-rendering: -webkit-optimize-contrast;
-                image-rendering: crisp-edges;
-                image-rendering: pixelated;
+                border-radius: 20px;
             `;
             container.appendChild(canvas);
 
             const ctx = canvas.getContext('2d');
-            // Force high quality rendering
             ctx.imageSmoothingEnabled = false;
-            ctx.webkitImageSmoothingEnabled = false;
-            ctx.mozImageSmoothingEnabled = false;
-            ctx.msImageSmoothingEnabled = false;
-            ctx.oImageSmoothingEnabled = false;
             
             const particles = [];
-            const particleCount = 150;
+            const particleCount = this.isMobile ? 20 : 30;
             let animationId;
+            let frameCount = 0;
 
-            // Scale for high DPI
-            ctx.scale(pixelRatio, pixelRatio);
-
-            // Create fire particles
             for (let i = 0; i < particleCount; i++) {
                 particles.push({
-                    x: Math.random() * (container.clientWidth || window.innerWidth),
-                    y: (container.clientHeight || window.innerHeight) + Math.random() * 100,
-                    size: 10 + Math.random() * 20,
-                    speed: 1 + Math.random() * 3,
+                    x: Math.random() * container.clientWidth,
+                    y: container.clientHeight + Math.random() * 50,
+                    size: 2 + Math.random() * 6,
+                    speed: 0.3 + Math.random() * 1.2,
                     sway: Math.random() * 2 - 1,
                     hue: 15 + Math.random() * 20,
                     alpha: 0.3 + Math.random() * 0.4
@@ -1202,26 +735,23 @@ class UserDisplayManager {
             function animate() {
                 if (!canvas.parentNode) return;
                 
-                const width = container.clientWidth || window.innerWidth;
-                const height = container.clientHeight || window.innerHeight;
+                const width = container.clientWidth;
+                const height = container.clientHeight;
                 
-                // Create fiery gradient background - CLEAR without blur
-                const gradient = ctx.createLinearGradient(0, 0, 0, height);
-                gradient.addColorStop(0, 'rgba(255, 50, 0, 0.3)');
-                gradient.addColorStop(0.5, 'rgba(255, 100, 0, 0.2)');
-                gradient.addColorStop(1, 'rgba(255, 150, 0, 0.1)');
+                frameCount++;
                 
-                ctx.fillStyle = gradient;
+                // Clear with trail effect
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
                 ctx.fillRect(0, 0, width, height);
                 
                 // Update and draw particles
                 particles.forEach(particle => {
                     particle.y -= particle.speed;
-                    particle.x += particle.sway * 0.5;
+                    particle.x += particle.sway * 0.3;
                     particle.alpha *= 0.99;
                     
-                    if (particle.y < -50 || particle.alpha < 0.05) {
-                        particle.y = height + Math.random() * 100;
+                    if (particle.y < -20 || particle.alpha < 0.05) {
+                        particle.y = height + Math.random() * 50;
                         particle.x = Math.random() * width;
                         particle.alpha = 0.3 + Math.random() * 0.4;
                     }
@@ -1250,17 +780,17 @@ class UserDisplayManager {
                 }
             };
         } catch (error) {
-            console.error('❌ Error in fire glow animation:', error);
             return () => {};
         }
     }
 
-    createCosmicEnergyAnimation(container) {
+    // OPTIMIZED: Cosmic energy animation - REAL PULSING WAVES
+    createCosmicEnergyAnimationForProfileCard(container) {
         try {
             const canvas = document.createElement('canvas');
-            const pixelRatio = window.devicePixelRatio || 1;
-            canvas.width = (container.clientWidth || window.innerWidth) * pixelRatio;
-            canvas.height = (container.clientHeight || window.innerHeight) * pixelRatio;
+            const pixelRatio = 1;
+            canvas.width = container.clientWidth * pixelRatio;
+            canvas.height = container.clientHeight * pixelRatio;
             
             canvas.style.cssText = `
                 position: absolute;
@@ -1269,14 +799,11 @@ class UserDisplayManager {
                 width: 100%;
                 height: 100%;
                 display: block;
-                image-rendering: -webkit-optimize-contrast;
-                image-rendering: crisp-edges;
+                border-radius: 20px;
             `;
             container.appendChild(canvas);
 
             const ctx = canvas.getContext('2d');
-            ctx.imageSmoothingEnabled = false;
-            ctx.scale(pixelRatio, pixelRatio);
             
             let time = 0;
             let animationId;
@@ -1284,22 +811,19 @@ class UserDisplayManager {
             function animate() {
                 if (!canvas.parentNode) return;
                 
-                const width = container.clientWidth || window.innerWidth;
-                const height = container.clientHeight || window.innerHeight;
+                const width = container.clientWidth;
+                const height = container.clientHeight;
                 
                 time += 0.02;
                 
-                // Cosmic background - CLEAR without blur
-                const gradient = ctx.createLinearGradient(0, 0, width, height);
-                gradient.addColorStop(0, 'rgba(10, 0, 30, 0.9)');
-                gradient.addColorStop(1, 'rgba(30, 0, 50, 0.9)');
-                ctx.fillStyle = gradient;
+                // Cosmic background
+                ctx.fillStyle = 'rgba(10, 0, 30, 0.8)';
                 ctx.fillRect(0, 0, width, height);
                 
                 // Pulsing energy waves
-                for (let i = 0; i < 5; i++) {
+                for (let i = 0; i < 3; i++) {
                     const pulse = (Math.sin(time + i) + 1) * 0.5;
-                    const radius = (width / 3) * pulse;
+                    const radius = (width / 4) * pulse;
                     
                     const gradient = ctx.createRadialGradient(
                         width / 2, height / 2, 0,
@@ -1315,15 +839,15 @@ class UserDisplayManager {
                 }
                 
                 // Energy particles
-                for (let i = 0; i < 50; i++) {
-                    const angle = time * 0.5 + i * 0.1;
-                    const distance = 50 + Math.sin(time + i) * 30;
+                for (let i = 0; i < (this.isMobile ? 15 : 25); i++) {
+                    const angle = time * 0.5 + i * 0.2;
+                    const distance = 20 + Math.sin(time + i) * 15;
                     const x = width / 2 + Math.cos(angle) * distance;
                     const y = height / 2 + Math.sin(angle) * distance;
                     
                     ctx.fillStyle = `hsla(${240 + Math.sin(time + i) * 60}, 100%, 70%, 0.8)`;
                     ctx.beginPath();
-                    ctx.arc(x, y, 2, 0, Math.PI * 2);
+                    ctx.arc(x, y, 1, 0, Math.PI * 2);
                     ctx.fill();
                 }
                 
@@ -1338,33 +862,33 @@ class UserDisplayManager {
                 }
             };
         } catch (error) {
-            console.error('❌ Error in cosmic energy animation:', error);
             return () => {};
         }
     }
 
-    createFloatingHeartsAnimation(container) {
+    // OPTIMIZED: Floating hearts animation - REAL HEARTS
+    createFloatingHeartsAnimationForProfileCard(container) {
         try {
             const hearts = [];
-            const heartCount = 20;
+            const heartCount = this.isMobile ? 6 : 8;
             let intervalId;
 
             function createHeart() {
                 const heart = document.createElement('div');
                 heart.innerHTML = '💖';
-                const translateX = (Math.random() * 100 - 50);
+                const translateX = (Math.random() * 40 - 20);
                 const rotate = Math.random() * 360;
                 
                 heart.style.cssText = `
                     position: absolute;
-                    font-size: ${20 + Math.random() * 25}px;
+                    font-size: ${12 + Math.random() * 12}px;
                     left: ${Math.random() * 100}%;
                     top: 110%;
                     opacity: ${0.3 + Math.random() * 0.6};
-                    animation: floatHeartUp ${8 + Math.random() * 8}s linear forwards;
+                    animation: floatHeartUp ${4 + Math.random() * 4}s linear forwards;
                     pointer-events: none;
                     z-index: 1;
-                    filter: drop-shadow(0 0 10px rgba(255, 105, 180, 0.5));
+                    filter: drop-shadow(0 0 5px rgba(255, 105, 180, 0.5));
                     --heart-translate-x: ${translateX}px;
                     --heart-rotate: ${rotate}deg;
                 `;
@@ -1377,39 +901,37 @@ class UserDisplayManager {
                         heart.remove();
                         hearts.splice(hearts.indexOf(heart), 1);
                     }
-                }, 16000);
+                }, 8000);
             }
 
-            // Create initial hearts
             for (let i = 0; i < heartCount; i++) {
-                setTimeout(createHeart, i * 300);
+                setTimeout(createHeart, i * 600);
             }
 
-            // Continue creating hearts
-            intervalId = setInterval(createHeart, 500);
+            const interval = this.isMobile ? 1500 : 1000;
+            intervalId = setInterval(createHeart, interval);
             
             return () => {
                 if (intervalId) {
                     clearInterval(intervalId);
                 }
-                // Remove all hearts
                 hearts.forEach(heart => {
                     if (heart.parentNode) heart.remove();
                 });
                 hearts.length = 0;
             };
         } catch (error) {
-            console.error('❌ Error in floating hearts animation:', error);
             return () => {};
         }
     }
 
-    createNeonPulseAnimation(container) {
+    // OPTIMIZED: Neon pulse animation - REAL NEON GRID
+    createNeonPulseAnimationForProfileCard(container) {
         try {
             const canvas = document.createElement('canvas');
-            const pixelRatio = window.devicePixelRatio || 1;
-            canvas.width = (container.clientWidth || window.innerWidth) * pixelRatio;
-            canvas.height = (container.clientHeight || window.innerHeight) * pixelRatio;
+            const pixelRatio = 1;
+            canvas.width = container.clientWidth * pixelRatio;
+            canvas.height = container.clientHeight * pixelRatio;
             
             canvas.style.cssText = `
                 position: absolute;
@@ -1418,14 +940,11 @@ class UserDisplayManager {
                 width: 100%;
                 height: 100%;
                 display: block;
-                image-rendering: -webkit-optimize-contrast;
-                image-rendering: crisp-edges;
+                border-radius: 20px;
             `;
             container.appendChild(canvas);
 
             const ctx = canvas.getContext('2d');
-            ctx.imageSmoothingEnabled = false;
-            ctx.scale(pixelRatio, pixelRatio);
             
             let time = 0;
             let animationId;
@@ -1433,8 +952,8 @@ class UserDisplayManager {
             function animate() {
                 if (!canvas.parentNode) return;
                 
-                const width = container.clientWidth || window.innerWidth;
-                const height = container.clientHeight || window.innerHeight;
+                const width = container.clientWidth;
+                const height = container.clientHeight;
                 
                 time += 0.03;
                 
@@ -1443,18 +962,18 @@ class UserDisplayManager {
                 ctx.fillRect(0, 0, width, height);
                 
                 // Neon grid
-                const gridSize = 50;
+                const gridSize = 30;
                 const pulse = (Math.sin(time) + 1) * 0.5;
                 
                 for (let x = 0; x < width; x += gridSize) {
                     for (let y = 0; y < height; y += gridSize) {
                         const dist = Math.sqrt(Math.pow(x - width/2, 2) + Math.pow(y - height/2, 2));
-                        const intensity = (Math.sin(time + dist * 0.01) + 1) * 0.5;
+                        const intensity = (Math.sin(time + dist * 0.02) + 1) * 0.5;
                         
                         ctx.strokeStyle = `hsla(${200 + intensity * 160}, 100%, 60%, ${0.3 + intensity * 0.4})`;
                         ctx.lineWidth = 1 + intensity * 2;
                         ctx.beginPath();
-                        ctx.arc(x, y, 5 + intensity * 10, 0, Math.PI * 2);
+                        ctx.arc(x, y, 3 + intensity * 8, 0, Math.PI * 2);
                         ctx.stroke();
                     }
                 }
@@ -1462,14 +981,14 @@ class UserDisplayManager {
                 // Pulsing center
                 const centerGradient = ctx.createRadialGradient(
                     width/2, height/2, 0,
-                    width/2, height/2, 200
+                    width/2, height/2, 100
                 );
                 centerGradient.addColorStop(0, `hsla(${300 + Math.sin(time) * 60}, 100%, 70%, ${0.3 * pulse})`);
                 centerGradient.addColorStop(1, 'transparent');
                 
                 ctx.fillStyle = centerGradient;
                 ctx.beginPath();
-                ctx.arc(width/2, height/2, 200, 0, Math.PI * 2);
+                ctx.arc(width/2, height/2, 100, 0, Math.PI * 2);
                 ctx.fill();
                 
                 animationId = requestAnimationFrame(animate);
@@ -1483,17 +1002,17 @@ class UserDisplayManager {
                 }
             };
         } catch (error) {
-            console.error('❌ Error in neon pulse animation:', error);
             return () => {};
         }
     }
 
-    createStarryNightAnimation(container) {
+    // OPTIMIZED: Starry night animation - REAL TWINKLING STARS
+    createStarryNightAnimationForProfileCard(container) {
         try {
             const canvas = document.createElement('canvas');
-            const pixelRatio = window.devicePixelRatio || 1;
-            canvas.width = (container.clientWidth || window.innerWidth) * pixelRatio;
-            canvas.height = (container.clientHeight || window.innerHeight) * pixelRatio;
+            const pixelRatio = 1;
+            canvas.width = container.clientWidth * pixelRatio;
+            canvas.height = container.clientHeight * pixelRatio;
             
             canvas.style.cssText = `
                 position: absolute;
@@ -1502,27 +1021,23 @@ class UserDisplayManager {
                 width: 100%;
                 height: 100%;
                 display: block;
-                image-rendering: -webkit-optimize-contrast;
-                image-rendering: crisp-edges;
+                border-radius: 20px;
             `;
             container.appendChild(canvas);
 
             const ctx = canvas.getContext('2d');
-            ctx.imageSmoothingEnabled = false;
-            ctx.scale(pixelRatio, pixelRatio);
             
             const stars = [];
-            const starCount = 200;
+            const starCount = this.isMobile ? 25 : 40;
             let animationId;
 
             // Create stars
             for (let i = 0; i < starCount; i++) {
                 stars.push({
-                    x: Math.random() * (container.clientWidth || window.innerWidth),
-                    y: Math.random() * (container.clientHeight || window.innerHeight),
-                    size: Math.random() * 2,
+                    x: Math.random() * container.clientWidth,
+                    y: Math.random() * container.clientHeight,
+                    size: Math.random() * 1.5,
                     brightness: Math.random() * 0.8 + 0.2,
-                    speed: 0.1 + Math.random() * 0.3,
                     twinkleSpeed: Math.random() * 0.05
                 });
             }
@@ -1532,8 +1047,8 @@ class UserDisplayManager {
             function animate() {
                 if (!canvas.parentNode) return;
                 
-                const width = container.clientWidth || window.innerWidth;
-                const height = container.clientHeight || window.innerHeight;
+                const width = container.clientWidth;
+                const height = container.clientHeight;
                 
                 time += 0.016;
                 
@@ -1550,16 +1065,6 @@ class UserDisplayManager {
                     ctx.beginPath();
                     ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
                     ctx.fill();
-                    
-                    // Shooting stars occasionally
-                    if (Math.random() < 0.0005) {
-                        ctx.strokeStyle = `rgba(255, 255, 255, ${currentBrightness})`;
-                        ctx.lineWidth = 1;
-                        ctx.beginPath();
-                        ctx.moveTo(star.x, star.y);
-                        ctx.lineTo(star.x - 50, star.y + 20);
-                        ctx.stroke();
-                    }
                 });
                 
                 animationId = requestAnimationFrame(animate);
@@ -1573,15 +1078,15 @@ class UserDisplayManager {
                 }
             };
         } catch (error) {
-            console.error('❌ Error in starry night animation:', error);
             return () => {};
         }
     }
 
-    createMagicSparklesAnimation(container) {
+    // OPTIMIZED: Magic sparkles animation - REAL SPARKLES
+    createMagicSparklesAnimationForProfileCard(container) {
         try {
             const sparkles = [];
-            const sparkleCount = 30;
+            const sparkleCount = this.isMobile ? 10 : 15;
             let intervalId;
 
             function createSparkle() {
@@ -1589,14 +1094,14 @@ class UserDisplayManager {
                 sparkle.innerHTML = '✨';
                 sparkle.style.cssText = `
                     position: absolute;
-                    font-size: ${15 + Math.random() * 20}px;
+                    font-size: ${12 + Math.random() * 12}px;
                     left: ${Math.random() * 100}%;
                     top: ${Math.random() * 100}%;
                     opacity: 0;
-                    animation: sparkleTwinkle ${2 + Math.random() * 3}s ease-in-out infinite;
+                    animation: sparkleTwinkle ${2 + Math.random() * 2}s ease-in-out infinite;
                     pointer-events: none;
                     z-index: 1;
-                    filter: drop-shadow(0 0 8px gold);
+                    filter: drop-shadow(0 0 5px gold);
                 `;
 
                 container.appendChild(sparkle);
@@ -1607,39 +1112,37 @@ class UserDisplayManager {
                         sparkle.remove();
                         sparkles.splice(sparkles.indexOf(sparkle), 1);
                     }
-                }, 5000);
+                }, 4000);
             }
 
-            // Create initial sparkles
             for (let i = 0; i < sparkleCount; i++) {
-                setTimeout(createSparkle, i * 200);
+                setTimeout(createSparkle, i * 400);
             }
 
-            // Continue creating sparkles
-            intervalId = setInterval(createSparkle, 300);
+            const interval = this.isMobile ? 800 : 600;
+            intervalId = setInterval(createSparkle, interval);
             
             return () => {
                 if (intervalId) {
                     clearInterval(intervalId);
                 }
-                // Remove all sparkles
                 sparkles.forEach(sparkle => {
                     if (sparkle.parentNode) sparkle.remove();
                 });
                 sparkles.length = 0;
             };
         } catch (error) {
-            console.error('❌ Error in magic sparkles animation:', error);
             return () => {};
         }
     }
 
-    createLiquidGoldAnimation(container) {
+    // OPTIMIZED: Liquid gold animation - REAL FLOWING WAVES
+    createLiquidGoldAnimationForProfileCard(container) {
         try {
             const canvas = document.createElement('canvas');
-            const pixelRatio = window.devicePixelRatio || 1;
-            canvas.width = (container.clientWidth || window.innerWidth) * pixelRatio;
-            canvas.height = (container.clientHeight || window.innerHeight) * pixelRatio;
+            const pixelRatio = 1;
+            canvas.width = container.clientWidth * pixelRatio;
+            canvas.height = container.clientHeight * pixelRatio;
             
             canvas.style.cssText = `
                 position: absolute;
@@ -1648,14 +1151,11 @@ class UserDisplayManager {
                 width: 100%;
                 height: 100%;
                 display: block;
-                image-rendering: -webkit-optimize-contrast;
-                image-rendering: crisp-edges;
+                border-radius: 20px;
             `;
             container.appendChild(canvas);
 
             const ctx = canvas.getContext('2d');
-            ctx.imageSmoothingEnabled = false;
-            ctx.scale(pixelRatio, pixelRatio);
             
             let time = 0;
             let animationId;
@@ -1663,8 +1163,8 @@ class UserDisplayManager {
             function animate() {
                 if (!canvas.parentNode) return;
                 
-                const width = container.clientWidth || window.innerWidth;
-                const height = container.clientHeight || window.innerHeight;
+                const width = container.clientWidth;
+                const height = container.clientHeight;
                 
                 time += 0.02;
                 
@@ -1677,7 +1177,7 @@ class UserDisplayManager {
                 ctx.fillRect(0, 0, width, height);
                 
                 // Liquid gold waves
-                for (let i = 0; i < 3; i++) {
+                for (let i = 0; i < 2; i++) {
                     const waveGradient = ctx.createLinearGradient(0, 0, 0, height);
                     waveGradient.addColorStop(0, `hsla(${45 + i * 5}, 100%, 50%, 0.3)`);
                     waveGradient.addColorStop(0.5, `hsla(${50 + i * 5}, 100%, 60%, 0.4)`);
@@ -1686,15 +1186,15 @@ class UserDisplayManager {
                     ctx.fillStyle = waveGradient;
                     ctx.beginPath();
                     
-                    const baseY = 100 + i * 80;
-                    const amplitude = 30 + Math.sin(time + i) * 20;
+                    const baseY = 50 + i * 40;
+                    const amplitude = 15 + Math.sin(time + i) * 10;
                     
                     ctx.moveTo(0, baseY + Math.sin(time + i) * amplitude);
                     
                     for (let x = 0; x < width; x += 5) {
                         const y = baseY + 
-                                 Math.sin(x * 0.01 + time + i) * amplitude +
-                                 Math.cos(x * 0.008 + time * 1.3 + i) * amplitude * 0.7;
+                                 Math.sin(x * 0.02 + time + i) * amplitude +
+                                 Math.cos(x * 0.016 + time * 1.3 + i) * amplitude * 0.7;
                         ctx.lineTo(x, y);
                     }
                     
@@ -1715,17 +1215,17 @@ class UserDisplayManager {
                 }
             };
         } catch (error) {
-            console.error('❌ Error in liquid gold animation:', error);
             return () => {};
         }
     }
 
-    createNorthernLightsAnimation(container) {
+    // OPTIMIZED: Northern lights animation - REAL AURORA
+    createNorthernLightsAnimationForProfileCard(container) {
         try {
             const canvas = document.createElement('canvas');
-            const pixelRatio = window.devicePixelRatio || 1;
-            canvas.width = (container.clientWidth || window.innerWidth) * pixelRatio;
-            canvas.height = (container.clientHeight || window.innerHeight) * pixelRatio;
+            const pixelRatio = 1;
+            canvas.width = container.clientWidth * pixelRatio;
+            canvas.height = container.clientHeight * pixelRatio;
             
             canvas.style.cssText = `
                 position: absolute;
@@ -1734,14 +1234,11 @@ class UserDisplayManager {
                 width: 100%;
                 height: 100%;
                 display: block;
-                image-rendering: -webkit-optimize-contrast;
-                image-rendering: crisp-edges;
+                border-radius: 20px;
             `;
             container.appendChild(canvas);
 
             const ctx = canvas.getContext('2d');
-            ctx.imageSmoothingEnabled = false;
-            ctx.scale(pixelRatio, pixelRatio);
             
             let time = 0;
             let animationId;
@@ -1749,8 +1246,8 @@ class UserDisplayManager {
             function animate() {
                 if (!canvas.parentNode) return;
                 
-                const width = container.clientWidth || window.innerWidth;
-                const height = container.clientHeight || window.innerHeight;
+                const width = container.clientWidth;
+                const height = container.clientHeight;
                 
                 time += 0.005;
                 
@@ -1759,7 +1256,7 @@ class UserDisplayManager {
                 ctx.fillRect(0, 0, width, height);
                 
                 // Aurora layers
-                for (let i = 0; i < 4; i++) {
+                for (let i = 0; i < 3; i++) {
                     const gradient = ctx.createLinearGradient(0, 0, 0, height);
                     const hue = 160 + i * 20 + Math.sin(time + i) * 30;
                     
@@ -1771,15 +1268,15 @@ class UserDisplayManager {
                     ctx.fillStyle = gradient;
                     ctx.beginPath();
                     
-                    const baseY = 80 + i * 40;
-                    const amplitude = 40 + Math.sin(time * 0.5 + i) * 30;
+                    const baseY = 40 + i * 30;
+                    const amplitude = 20 + Math.sin(time * 0.5 + i) * 15;
                     
                     ctx.moveTo(0, baseY + Math.sin(time + i) * amplitude);
                     
                     for (let x = 0; x < width; x += 5) {
                         const y = baseY + 
-                                 Math.sin(x * 0.008 + time + i) * amplitude +
-                                 Math.cos(x * 0.006 + time * 1.5 + i) * amplitude * 0.8;
+                                 Math.sin(x * 0.016 + time + i) * amplitude +
+                                 Math.cos(x * 0.012 + time * 1.5 + i) * amplitude * 0.8;
                         ctx.lineTo(x, y);
                     }
                     
@@ -1800,17 +1297,17 @@ class UserDisplayManager {
                 }
             };
         } catch (error) {
-            console.error('❌ Error in northern lights animation:', error);
             return () => {};
         }
     }
 
-    createDigitalMatrixAnimation(container) {
+    // OPTIMIZED: Digital matrix animation - REAL MATRIX RAIN
+    createDigitalMatrixAnimationForProfileCard(container) {
         try {
             const canvas = document.createElement('canvas');
-            const pixelRatio = window.devicePixelRatio || 1;
-            canvas.width = (container.clientWidth || window.innerWidth) * pixelRatio;
-            canvas.height = (container.clientHeight || window.innerHeight) * pixelRatio;
+            const pixelRatio = 1;
+            canvas.width = container.clientWidth * pixelRatio;
+            canvas.height = container.clientHeight * pixelRatio;
             
             canvas.style.cssText = `
                 position: absolute;
@@ -1819,64 +1316,72 @@ class UserDisplayManager {
                 width: 100%;
                 height: 100%;
                 display: block;
-                image-rendering: -webkit-optimize-contrast;
-                image-rendering: crisp-edges;
+                border-radius: 20px;
             `;
             container.appendChild(canvas);
 
             const ctx = canvas.getContext('2d');
             ctx.imageSmoothingEnabled = false;
-            ctx.scale(pixelRatio, pixelRatio);
             
-            const width = container.clientWidth || window.innerWidth;
-            const height = container.clientHeight || window.innerHeight;
-            const columns = Math.floor(width / 20);
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            const fontSize = this.isMobile ? 10 : 12;
+            const columns = Math.floor(width / fontSize);
             const drops = Array(columns).fill(1);
-            let intervalId;
+            let animationId;
+            let frameCount = 0;
 
-            function draw() {
+            function animate() {
                 if (!canvas.parentNode) return;
                 
-                // Semi-transparent black for trail effect
-                ctx.fillStyle = 'rgba(0, 10, 0, 0.05)';
-                ctx.fillRect(0, 0, width, height);
+                frameCount++;
+                
+                // Semi-transparent black for trail effect - less frequent on mobile
+                if (frameCount % (this.isMobile ? 3 : 2) === 0) {
+                    ctx.fillStyle = 'rgba(0, 10, 0, 0.1)';
+                    ctx.fillRect(0, 0, width, height);
+                }
                 
                 ctx.fillStyle = '#0f0';
-                ctx.font = '15px monospace';
+                ctx.font = `${fontSize}px monospace`;
                 
-                drops.forEach((y, index) => {
+                // Draw matrix rain
+                for (let i = 0; i < drops.length; i++) {
                     const text = String.fromCharCode(0x30A0 + Math.random() * 96);
-                    const x = index * 20;
+                    const x = i * fontSize;
+                    const y = drops[i] * fontSize;
                     
-                    ctx.fillText(text, x, y * 20);
+                    ctx.fillText(text, x, y);
                     
-                    if (y * 20 > height && Math.random() > 0.975) {
-                        drops[index] = 0;
+                    if (y > height && Math.random() > 0.975) {
+                        drops[i] = 0;
                     }
                     
-                    drops[index]++;
-                });
+                    drops[i]++;
+                }
+                
+                animationId = requestAnimationFrame(animate);
             }
-
-            intervalId = setInterval(draw, 50);
+            
+            animate();
             
             return () => {
-                if (intervalId) {
-                    clearInterval(intervalId);
+                if (animationId) {
+                    cancelAnimationFrame(animationId);
                 }
             };
         } catch (error) {
-            console.error('❌ Error in digital matrix animation:', error);
             return () => {};
         }
     }
 
-    createEnergyFieldAnimation(container) {
+    // OPTIMIZED: Energy field animation - REAL PULSING ORBS
+    createEnergyFieldAnimationForProfileCard(container) {
         try {
             const canvas = document.createElement('canvas');
-            const pixelRatio = window.devicePixelRatio || 1;
-            canvas.width = (container.clientWidth || window.innerWidth) * pixelRatio;
-            canvas.height = (container.clientHeight || window.innerHeight) * pixelRatio;
+            const pixelRatio = 1;
+            canvas.width = container.clientWidth * pixelRatio;
+            canvas.height = container.clientHeight * pixelRatio;
             
             canvas.style.cssText = `
                 position: absolute;
@@ -1885,27 +1390,24 @@ class UserDisplayManager {
                 width: 100%;
                 height: 100%;
                 display: block;
-                image-rendering: -webkit-optimize-contrast;
-                image-rendering: crisp-edges;
+                border-radius: 20px;
             `;
             container.appendChild(canvas);
 
             const ctx = canvas.getContext('2d');
-            ctx.imageSmoothingEnabled = false;
-            ctx.scale(pixelRatio, pixelRatio);
             
-            const width = container.clientWidth || window.innerWidth;
-            const height = container.clientHeight || window.innerHeight;
+            const width = container.clientWidth;
+            const height = container.clientHeight;
             const orbs = [];
             let time = 0;
             let animationId;
 
-            for (let i = 0; i < 4; i++) {
+            for (let i = 0; i < (this.isMobile ? 2 : 3); i++) {
                 orbs.push({
                     x: Math.random() * width,
                     y: Math.random() * height,
-                    radius: 40 + Math.random() * 60,
-                    speed: 0.3 + Math.random() * 0.4,
+                    radius: 20 + Math.random() * 30,
+                    speed: 0.2 + Math.random() * 0.3,
                     hue: Math.random() * 360
                 });
             }
@@ -1923,8 +1425,8 @@ class UserDisplayManager {
                 ctx.fillRect(0, 0, width, height);
                 
                 orbs.forEach(orb => {
-                    orb.x += Math.cos(time * orb.speed) * 1.5;
-                    orb.y += Math.sin(time * orb.speed) * 1.5;
+                    orb.x += Math.cos(time * orb.speed) * 1;
+                    orb.y += Math.sin(time * orb.speed) * 1;
                     
                     if (orb.x < 0) orb.x = width;
                     if (orb.x > width) orb.x = 0;
@@ -1959,15 +1461,114 @@ class UserDisplayManager {
                 }
             };
         } catch (error) {
-            console.error('❌ Error in energy field animation:', error);
             return () => {};
         }
     }
 
-    removeExistingAnimations() {
-        console.log('🗑️ Removing all existing display elements...');
+    // Preview function
+    previewDisplay(settings, previewContainerId = 'displayPreview') {
+        const previewContainer = document.getElementById(previewContainerId);
+        if (!previewContainer) return;
+
+        // Setup preview container structure
+        if (!previewContainer.querySelector('.profile-card-effects-container')) {
+            previewContainer.innerHTML = `
+                <div class="profile-card-effects-container" style="width: 100%; height: 200px;">
+                    <div class="profile-card-background"></div>
+                    <div class="profile-card-content" style="display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
+                        Preview Area
+                    </div>
+                </div>
+            `;
+        }
+
+        const effectsContainer = previewContainer.querySelector('.profile-card-effects-container');
         
-        // Stop all running animations first
+        // Clear existing effects
+        const existingWallpaper = effectsContainer.querySelector('.profile-card-wallpaper');
+        const existingAnimation = effectsContainer.querySelector('.profile-card-animation');
+        if (existingWallpaper) existingWallpaper.remove();
+        if (existingAnimation) existingAnimation.remove();
+
+        setTimeout(() => {
+            if (settings.wallpaper && this.isValidWallpaper(settings.wallpaper)) {
+                this.applyWallpaperPreview(settings.wallpaper, effectsContainer);
+            } else if (settings.animation && this.isValidAnimation(settings.animation)) {
+                this.applyAnimationPreview(settings.animation, effectsContainer);
+            }
+        }, 50);
+    }
+
+    applyWallpaperPreview(wallpaperId, container) {
+        const wallpaper = AVAILABLE_WALLPAPERS.find(w => w.id === wallpaperId);
+        if (!wallpaper) return;
+
+        const wallpaperElement = document.createElement('div');
+        wallpaperElement.className = 'profile-card-wallpaper';
+        wallpaperElement.style.cssText = `
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            border-radius: 20px !important;
+            background-image: url('${wallpaper.url}') !important;
+            background-size: cover !important;
+            background-position: center !important;
+            z-index: -2 !important;
+            opacity: 0.7 !important;
+        `;
+
+        container.appendChild(wallpaperElement);
+    }
+
+    applyAnimationPreview(animationId, container) {
+        const animation = AVAILABLE_ANIMATIONS.find(a => a.id === animationId);
+        if (!animation) return;
+
+        const animationContainer = document.createElement('div');
+        animationContainer.className = 'profile-card-animation';
+        animationContainer.style.cssText = `
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            border-radius: 20px !important;
+            pointer-events: none !important;
+            z-index: -3 !important;
+            overflow: hidden !important;
+        `;
+
+        container.appendChild(animationContainer);
+        this.createMagicSparklesAnimationForProfileCard(animationContainer);
+    }
+
+    async applyDisplayToUserProfile(userId) {
+        if (this.isApplying) return;
+        
+        this.isApplying = true;
+        
+        try {
+            const profileSettings = await this.loadUserDisplayForProfile(userId);
+            this.setupProfileCardStructure();
+            this.removeExistingAnimations();
+
+            setTimeout(() => {
+                if (profileSettings.wallpaper && this.isValidWallpaper(profileSettings.wallpaper)) {
+                    this.applyWallpaperToProfileCard(profileSettings.wallpaper);
+                } else if (profileSettings.animation && this.isValidAnimation(profileSettings.animation)) {
+                    this.applyAnimationToProfileCard(profileSettings.animation);
+                }
+                this.isApplying = false;
+            }, 50);
+            
+        } catch (error) {
+            this.isApplying = false;
+        }
+    }
+
+    removeExistingAnimations() {
         if (this.activeAnimations) {
             this.activeAnimations.forEach(({ stopAnimation }) => {
                 if (typeof stopAnimation === 'function') {
@@ -1977,52 +1578,24 @@ class UserDisplayManager {
             this.activeAnimations.clear();
         }
         
-        const elementsToRemove = [
-            'profile-animation',
-            'profile-wallpaper',
-            'custom-background',
-            'user-display-wallpaper',
-            'user-display-animation'
-        ];
-        
-        elementsToRemove.forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
+        // Remove only profile card specific elements
+        const elementsToRemove = document.querySelectorAll('.profile-card-wallpaper, .profile-card-animation');
+        elementsToRemove.forEach(element => {
+            if (element.parentNode) {
                 element.remove();
-                console.log(`🗑️ Removed by ID: ${id}`);
             }
         });
         
-        const classSelectors = ['.user-display-wallpaper', '.user-display-animation', '[data-wallpaper-id]', '[data-animation-id]'];
-        classSelectors.forEach(selector => {
-            const elements = document.querySelectorAll(selector);
-            elements.forEach(element => {
-                if (element.parentNode) {
-                    element.remove();
-                    console.log(`🗑️ Removed by selector: ${selector}`);
+        // Remove canvases from profile cards
+        const profileCards = document.querySelectorAll('.profile-card-effects-container');
+        profileCards.forEach(container => {
+            const canvases = container.querySelectorAll('canvas');
+            canvases.forEach(canvas => {
+                if (canvas.parentNode) {
+                    canvas.remove();
                 }
             });
         });
-        
-        const canvases = document.querySelectorAll('canvas');
-        canvases.forEach(canvas => {
-            if (canvas.parentNode && (canvas.style.position === 'fixed' || canvas.style.position === 'absolute')) {
-                canvas.remove();
-                console.log('🗑️ Removed animation canvas');
-            }
-        });
-        
-        // Reset profile card styling
-        const profileCards = document.querySelectorAll('.profile-card, .profile-container, .user-profile, .profile-view-container, .profile-details');
-        profileCards.forEach(card => {
-            card.style.cssText += `
-                background: transparent !important;
-                border: none !important;
-                box-shadow: none !important;
-            `;
-        });
-        
-        console.log('✅ Cleanup complete');
     }
 
     getAvailableWallpapers() {
@@ -2039,34 +1612,26 @@ let userDisplayManager = null;
 
 // Enhanced initialization
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('UserDisplay: DOM loaded, initializing...');
-    
     onAuthStateChanged(auth, (user) => {
         if (user) {
-            console.log('UserDisplay: User authenticated', user.uid);
             userDisplayManager = new UserDisplayManager(db, user);
             window.userDisplayManager = userDisplayManager;
             
-            // Apply display based on current page
             setTimeout(() => {
                 if (window.location.pathname.includes('profile.html') || 
                     document.querySelector('.profile-view-container')) {
-                    console.log('UserDisplay: Profile page detected');
                     
                     const urlParams = new URLSearchParams(window.location.search);
                     const profileUserId = urlParams.get('id');
                     
                     if (profileUserId && profileUserId !== user.uid) {
-                        console.log('👥 Viewing other user profile:', profileUserId);
                         userDisplayManager.applyDisplayToUserProfile(profileUserId);
                     } else {
-                        console.log('👤 Viewing own profile');
                         userDisplayManager.applyDisplayToProfile();
                     }
                 }
             }, 1000);
         } else {
-            console.log('UserDisplay: No user authenticated');
             userDisplayManager = null;
         }
     });
@@ -2078,29 +1643,20 @@ export { UserDisplayManager, userDisplayManager, AVAILABLE_WALLPAPERS, AVAILABLE
 // Global function for manual triggering
 window.applyUserDisplay = function() {
     if (window.userDisplayManager) {
-        console.log('🌍 GLOBAL: Manual display application triggered');
         window.userDisplayManager.applyDisplayToProfile();
-    } else {
-        console.log('🌍 GLOBAL: userDisplayManager not available');
     }
 };
 
 // Global function to apply display for specific user
 window.applyDisplayForUser = function(userId) {
     if (window.userDisplayManager) {
-        console.log('🌍 GLOBAL: Applying display for user:', userId);
         window.userDisplayManager.applyDisplayToUserProfile(userId);
-    } else {
-        console.log('🌍 GLOBAL: userDisplayManager not available');
     }
 };
 
 // Global function for previewing display in account page
 window.previewUserDisplay = function(settings, containerId = 'displayPreview') {
     if (window.userDisplayManager) {
-        console.log('🌍 GLOBAL: Previewing display settings in container:', containerId);
         window.userDisplayManager.previewDisplay(settings, containerId);
-    } else {
-        console.log('🌍 GLOBAL: userDisplayManager not available for preview');
     }
 };
