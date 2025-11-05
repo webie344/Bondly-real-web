@@ -19,7 +19,8 @@ import {
     onSnapshot,
     orderBy,
     arrayUnion,
-    deleteDoc
+    deleteDoc,
+    Timestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -56,6 +57,9 @@ class GameManager {
         this.userCache = new Map();
         this.gameSessionListener = null;
         this.endedGames = new Set();
+        this.timerInterval = null;
+        this.countdownTime = 3; // 3-second countdown
+        this.countdownStartTime = null;
         
         this.init();
     }
@@ -71,11 +75,49 @@ class GameManager {
             if (user) {
                 this.currentUser = user;
                 this.setupFirebaseListeners();
+                this.resumeInterruptedGames();
             } else {
                 this.currentUser = null;
                 this.cleanup();
             }
         });
+    }
+
+    // NEW: Resume games that were interrupted during countdown
+    async resumeInterruptedGames() {
+        if (!this.currentUser) return;
+        
+        try {
+            const pendingGamesQuery = query(
+                collection(db, 'gameSessions'),
+                where('participants', 'array-contains', this.currentUser.uid),
+                where('status', '==', 'pending')
+            );
+            
+            const snapshot = await getDocs(pendingGamesQuery);
+            
+            for (const docSnap of snapshot.docs) {
+                const gameData = docSnap.data();
+                const createdAt = gameData.createdAt;
+                
+                // If game was created more than 30 seconds ago, activate it automatically
+                if (createdAt && this.isTimestampOlderThan(createdAt, 30)) {
+                    console.log('Resuming interrupted game:', docSnap.id);
+                    await this.activateGame(docSnap.id, gameData.gameType);
+                }
+            }
+        } catch (error) {
+            console.error('Error resuming interrupted games:', error);
+        }
+    }
+
+    // NEW: Check if timestamp is older than specified seconds
+    isTimestampOlderThan(timestamp, seconds) {
+        if (!timestamp) return true;
+        
+        const now = Date.now();
+        const timestampMs = timestamp.toDate ? timestamp.toDate().getTime() : timestamp;
+        return (now - timestampMs) > (seconds * 1000);
     }
 
     setupFirebaseListeners() {
@@ -128,7 +170,9 @@ class GameManager {
         try {
             const userDoc = await getDoc(doc(db, 'users', userId));
             if (userDoc.exists()) {
-                const userName = userDoc.data().name || 'Unknown User';
+                const userData = userDoc.data();
+                // Try different possible name fields
+                const userName = userData.name || userData.displayName || userData.username || 'Unknown User';
                 this.userCache.set(userId, userName);
                 return userName;
             }
@@ -137,6 +181,28 @@ class GameManager {
             console.error('Error fetching user name:', error);
             return 'Unknown User';
         }
+    }
+
+    async getCurrentUserName() {
+        if (!this.currentUser) return 'Unknown User';
+        
+        // First try to get from Firebase Auth
+        if (this.currentUser.displayName) {
+            return this.currentUser.displayName;
+        }
+        
+        // Then try to get from Firestore
+        try {
+            const userDoc = await getDoc(doc(db, 'users', this.currentUser.uid));
+            if (userDoc.exists()) {
+                const userData = userDoc.data();
+                return userData.name || userData.displayName || userData.username || 'Unknown User';
+            }
+        } catch (error) {
+            console.error('Error fetching current user name:', error);
+        }
+        
+        return 'Unknown User';
     }
 
     updateGameIcons() {
@@ -175,11 +241,13 @@ class GameManager {
             return;
         }
 
-        const fromUserName = this.currentUser.displayName || await this.getUserName(this.currentUser.uid);
+        // FIX: Get the actual sender's name properly
+        const fromUserName = await this.getCurrentUserName();
+        console.log('Sending invite from:', fromUserName, 'to:', opponentName);
         
         const inviteData = {
             fromUserId: this.currentUser.uid,
-            fromUserName: fromUserName,
+            fromUserName: fromUserName, // This should be the actual sender's name
             toUserId: opponentId,
             toUserName: opponentName,
             gameType: gameType,
@@ -197,7 +265,8 @@ class GameManager {
     }
 
     async handleGameInvite(inviteData, inviteId) {
-        console.log('Handling invite from:', inviteData.fromUserName, 'to:', this.currentUser?.displayName);
+        console.log('Handling invite data:', inviteData);
+        console.log('Handling invite from:', inviteData.fromUserName, 'to user:', this.currentUser?.uid);
         
         // FIX: Only handle invites sent TO the current user
         if (inviteData.fromUserId === this.currentUser.uid) {
@@ -224,10 +293,17 @@ class GameManager {
     showInviteNotification(inviteData, inviteId) {
         const notification = document.createElement('div');
         notification.className = 'game-invite-notification';
+        
+        // FIX: Debug the invite data
+        console.log('Showing notification with inviteData:', inviteData);
+        
+        // Use the actual sender's name from inviteData
+        const senderName = inviteData.fromUserName || 'Someone';
+        
         notification.innerHTML = `
             <div class="invite-content">
                 <h3>🎮 Game Invitation!</h3>
-                <p><strong>${inviteData.fromUserName}</strong> invited you to play <strong>${this.formatGameName(inviteData.gameType)}</strong></p>
+                <p><strong>${senderName}</strong> invited you to play <strong>${this.formatGameName(inviteData.gameType)}</strong></p>
                 <div class="invite-buttons">
                     <button class="accept-btn">Accept</button>
                     <button class="reject-btn">Reject</button>
@@ -259,6 +335,95 @@ class GameManager {
         return names[gameType] || gameType;
     }
 
+    // Start countdown timer for Rock Paper Scissors (simultaneous play)
+    startCountdownTimer(gameSessionId, gameType) {
+        // Clear any existing timer
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+        }
+        
+        // Remove any existing countdown timer
+        const existingTimer = document.querySelector('.countdown-timer');
+        if (existingTimer) {
+            document.body.removeChild(existingTimer);
+        }
+        
+        let countdown = this.countdownTime;
+        this.countdownStartTime = Date.now();
+        
+        const timerDisplay = document.createElement('div');
+        timerDisplay.className = 'countdown-timer';
+        timerDisplay.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            font-size: 3em;
+            font-weight: bold;
+            z-index: 10003;
+            text-align: center;
+        `;
+        
+        document.body.appendChild(timerDisplay);
+        
+        this.timerInterval = setInterval(() => {
+            timerDisplay.textContent = countdown > 0 ? countdown : 'GO!';
+            
+            if (countdown === 0) {
+                clearInterval(this.timerInterval);
+                this.timerInterval = null;
+                setTimeout(() => {
+                    if (document.body.contains(timerDisplay)) {
+                        document.body.removeChild(timerDisplay);
+                    }
+                    this.activateGame(gameSessionId, gameType);
+                }, 1000);
+            }
+            countdown--;
+        }, 1000);
+    }
+
+    // Activate game after countdown - different logic for RPS vs other games
+    async activateGame(gameSessionId, gameType) {
+        try {
+            if (gameType === 'rock-paper-scissors') {
+                // For RPS: Both players can play simultaneously, no turns
+                await updateDoc(doc(db, 'gameSessions', gameSessionId), {
+                    status: 'active',
+                    currentTurn: 'both', // Special value indicating both players can play
+                    updatedAt: serverTimestamp()
+                });
+            } else {
+                // For other games: Randomly determine first player
+                const gameSnap = await getDoc(doc(db, 'gameSessions', gameSessionId));
+                if (gameSnap.exists()) {
+                    const gameData = gameSnap.data();
+                    const randomIndex = Math.floor(Math.random() * gameData.participants.length);
+                    const firstPlayer = gameData.participants[randomIndex];
+                    
+                    await updateDoc(doc(db, 'gameSessions', gameSessionId), {
+                        currentTurn: firstPlayer,
+                        status: 'active',
+                        updatedAt: serverTimestamp()
+                    });
+                }
+            }
+            
+        } catch (error) {
+            console.error('Error activating game:', error);
+            // Fallback: set status to active
+            await updateDoc(doc(db, 'gameSessions', gameSessionId), {
+                status: 'active',
+                updatedAt: serverTimestamp()
+            });
+        }
+    }
+
     async acceptGameInvite(inviteData, inviteId) {
         try {
             // Mark invite as accepted
@@ -266,14 +431,15 @@ class GameManager {
                 status: 'accepted'
             });
 
-            const currentUserName = this.currentUser.displayName || await this.getUserName(this.currentUser.uid);
+            const currentUserName = await this.getCurrentUserName();
 
-            // Create game session
+            // Create game session with pending status
+            const participants = [inviteData.fromUserId, this.currentUser.uid];
             const gameSession = {
-                participants: [inviteData.fromUserId, this.currentUser.uid],
+                participants: participants,
                 gameType: inviteData.gameType,
-                status: 'active',
-                currentTurn: inviteData.fromUserId, // First player starts
+                status: 'pending', // Start as pending until countdown completes
+                currentTurn: null, // Will be set after countdown
                 players: {
                     [inviteData.fromUserId]: { 
                         name: inviteData.fromUserName, 
@@ -305,16 +471,21 @@ class GameManager {
                 gameSession.cards = shuffledCards;
                 gameSession.flippedCards = [];
                 gameSession.matchedPairs = [];
-                gameSession.currentSelection = []; // Track current card selections
-                gameSession.waitingForFlipBack = false; // Track if we're waiting for cards to flip back
+                gameSession.currentSelection = [];
+                gameSession.waitingForFlipBack = false;
             }
 
             const gameRef = await addDoc(collection(db, 'gameSessions'), gameSession);
-            await this.setupGameSessionListener(gameRef.id);
-
+            
             // Remove notification
             const notification = document.querySelector('.game-invite-notification');
             if (notification) document.body.removeChild(notification);
+
+            // Start countdown timer
+            this.startCountdownTimer(gameRef.id, inviteData.gameType);
+            
+            // Setup listener after countdown starts
+            await this.setupGameSessionListener(gameRef.id);
 
         } catch (error) {
             console.error('Error accepting game invite:', error);
@@ -364,6 +535,21 @@ class GameManager {
 
             this.currentGameSession = { ...gameData, id: docSnap.id };
 
+            // Handle pending games (countdown interrupted)
+            if (gameData.status === 'pending') {
+                console.log('Game is pending countdown completion');
+                
+                // If countdown was interrupted, activate the game immediately
+                if (gameData.createdAt && this.isTimestampOlderThan(gameData.createdAt, 30)) {
+                    console.log('Countdown was interrupted, activating game now');
+                    await this.activateGame(docSnap.id, gameData.gameType);
+                    return;
+                }
+                
+                // Otherwise, wait for normal countdown completion
+                return;
+            }
+
             const opponentId = gameData.participants.find(id => id !== this.currentUser.uid);
             if (!opponentId) {
                 this.showNotification('Invalid game session', 'error');
@@ -395,7 +581,12 @@ class GameManager {
     }
 
     updateGameState(gameData) {
-        this.isMyTurn = gameData.currentTurn === this.currentUser.uid;
+        // For Rock Paper Scissors: both players can play simultaneously
+        if (gameData.gameType === 'rock-paper-scissors') {
+            this.isMyTurn = true; // Always true for RPS after countdown
+        } else {
+            this.isMyTurn = gameData.currentTurn === this.currentUser.uid;
+        }
         
         if (this.games[gameData.gameType]) {
             this.games[gameData.gameType].updateState(gameData);
@@ -413,12 +604,12 @@ class GameManager {
             this.showNotification('Game ended', 'info');
             this.closeGame();
         } else if (gameData.winner === this.currentUser.uid) {
-            this.showNotification('🎉 You won the game!', 'success');
+            this.showCelebrationPopup('🎉 You won the game!', 'victory');
         } else if (gameData.winner === 'draw') {
-            this.showNotification('🤝 Game ended in a draw!', 'info');
+            this.showCelebrationPopup('🤝 Game ended in a draw!', 'draw');
         } else if (gameData.winner) {
             const winnerName = gameData.players[gameData.winner]?.name || 'Opponent';
-            this.showNotification(`😔 ${winnerName} won the game`, 'info');
+            this.showCelebrationPopup(`😔 ${winnerName} won the game`, 'defeat');
         }
         
         if (gameData.status === 'completed') {
@@ -428,12 +619,204 @@ class GameManager {
         }
     }
 
+    // Celebration popup for win/loss/draw
+    showCelebrationPopup(message, type = 'victory') {
+        const popup = document.createElement('div');
+        popup.className = `celebration-popup ${type}`;
+        
+        const emojis = {
+            'victory': '🎉',
+            'defeat': '😔', 
+            'draw': '🤝'
+        };
+        
+        const backgrounds = {
+            'victory': 'linear-gradient(135deg, #4CAF50, #45a049)',
+            'defeat': 'linear-gradient(135deg, #f44336, #d32f2f)',
+            'draw': 'linear-gradient(135deg, #FF9800, #F57C00)'
+        };
+        
+        popup.innerHTML = `
+            <div class="celebration-content">
+                <div class="celebration-emoji">${emojis[type]}</div>
+                <div class="celebration-message">${message}</div>
+                <button class="celebration-close">Continue</button>
+            </div>
+        `;
+        
+        popup.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10004;
+            animation: fadeIn 0.3s ease-in;
+        `;
+        
+        const content = popup.querySelector('.celebration-content');
+        content.style.cssText = `
+            background: ${backgrounds[type]};
+            color: white;
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            max-width: 300px;
+            animation: popIn 0.5s ease-out;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        `;
+        
+        const emoji = popup.querySelector('.celebration-emoji');
+        emoji.style.cssText = `
+            font-size: 4em;
+            margin-bottom: 20px;
+            animation: bounce 1s infinite;
+        `;
+        
+        const messageEl = popup.querySelector('.celebration-message');
+        messageEl.style.cssText = `
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 25px;
+            line-height: 1.4;
+        `;
+        
+        const closeBtn = popup.querySelector('.celebration-close');
+        closeBtn.style.cssText = `
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid white;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        `;
+        
+        closeBtn.onmouseover = () => {
+            closeBtn.style.background = 'rgba(255,255,255,0.3)';
+        };
+        
+        closeBtn.onmouseout = () => {
+            closeBtn.style.background = 'rgba(255,255,255,0.2)';
+        };
+        
+        closeBtn.onclick = () => {
+            document.body.removeChild(popup);
+        };
+        
+        document.body.appendChild(popup);
+        
+        // Auto-close after 5 seconds
+        setTimeout(() => {
+            if (document.body.contains(popup)) {
+                document.body.removeChild(popup);
+            }
+        }, 5000);
+    }
+
     async sendGameMove(move) {
-        if (!this.currentGame || !this.isMyTurn) {
-            this.showNotification("It's not your turn!", 'error');
+        if (!this.currentGame) {
+            this.showNotification("No active game!", 'error');
             return;
         }
 
+        // For Rock Paper Scissors: check if both players have made their moves
+        if (this.currentGame.type === 'rock-paper-scissors') {
+            await this.sendRPSMove(move);
+        } else {
+            // For other games: standard turn-based logic
+            if (!this.isMyTurn) {
+                this.showNotification("It's not your turn!", 'error');
+                return;
+            }
+            await this.sendStandardMove(move);
+        }
+    }
+
+    async sendRPSMove(move) {
+        try {
+            const gameRef = doc(db, 'gameSessions', this.currentGame.id);
+            const gameSnap = await getDoc(gameRef);
+            
+            if (!gameSnap.exists()) {
+                this.showNotification('Game session not found', 'error');
+                return;
+            }
+
+            const gameData = gameSnap.data();
+            const moves = gameData.moves || [];
+            
+            // Check if current user has already made a move in this round
+            const userMove = moves.find(m => m.playerId === this.currentUser.uid && !m.processed);
+            if (userMove) {
+                this.showNotification('You have already made your move!', 'error');
+                return;
+            }
+            
+            if (!this.games[this.currentGame.type].isValidMove(move, moves, gameData)) {
+                this.showNotification('Invalid move!', 'error');
+                return;
+            }
+            
+            const newMove = {
+                playerId: this.currentUser.uid,
+                move: move,
+                timestamp: new Date().toISOString(),
+                processed: false // Mark as unprocessed until both players move
+            };
+            
+            const updatedMoves = [...moves, newMove];
+            
+            // Check if both players have made their moves
+            const playerMoves = updatedMoves.filter(m => !m.processed);
+            const playerIds = [...new Set(playerMoves.map(m => m.playerId))];
+            
+            let updateData = {
+                moves: updatedMoves,
+                updatedAt: serverTimestamp()
+            };
+
+            // If both players have made their moves, process the round
+            if (playerIds.length >= 2) {
+                const lastTwoMoves = playerMoves.slice(-2);
+                const winnerResult = this.games[this.currentGame.type].checkWinner(lastTwoMoves, gameData);
+                
+                // Mark moves as processed
+                updatedMoves.forEach(move => {
+                    move.processed = true;
+                });
+                
+                updateData.moves = updatedMoves;
+                
+                if (winnerResult && winnerResult !== 'draw') {
+                    // Show celebration popup for round winner
+                    if (winnerResult === this.currentUser.uid) {
+                        this.showCelebrationPopup('🎉 You won this round!', 'victory');
+                    } else {
+                        this.showCelebrationPopup('😔 You lost this round!', 'defeat');
+                    }
+                    
+                    updateData[`players.${winnerResult}.score`] = (gameData.players[winnerResult]?.score || 0) + 1;
+                } else if (winnerResult === 'draw') {
+                    this.showCelebrationPopup('🤝 This round is a draw!', 'draw');
+                }
+            }
+
+            await updateDoc(gameRef, updateData);
+            
+        } catch (error) {
+            console.error('Error sending RPS move:', error);
+            this.showNotification('Error making move: ' + error.message, 'error');
+        }
+    }
+
+    async sendStandardMove(move) {
         try {
             const gameRef = doc(db, 'gameSessions', this.currentGame.id);
             const gameSnap = await getDoc(gameRef);
@@ -482,7 +865,6 @@ class GameManager {
                 updateData.winner = winner;
                 updateData.status = status;
                 updateData.currentTurn = null;
-                // Update scores for winner
                 updateData[`players.${winner}.score`] = (gameData.players[winner]?.score || 0) + 1;
             } else {
                 updateData.currentTurn = nextTurn;
@@ -494,29 +876,22 @@ class GameManager {
                 const currentSelection = gameData.currentSelection || [];
                 const currentMatched = gameData.matchedPairs || [];
                 
-                // If this is the first card of the turn
                 if (currentSelection.length === 0) {
                     updateData.currentSelection = [move];
                     updateData.flippedCards = [...currentFlipped, move];
-                } 
-                // If this is the second card of the turn
-                else if (currentSelection.length === 1) {
+                } else if (currentSelection.length === 1) {
                     const firstCard = currentSelection[0];
                     updateData.currentSelection = [firstCard, move];
                     updateData.flippedCards = [...currentFlipped, move];
                     
-                    // Check for match
                     const card1 = gameData.cards[firstCard];
                     const card2 = gameData.cards[move];
                     
                     if (card1 === card2) {
-                        // Match found - add to matched pairs and give point
-                        // FIX: Don't use arrayUnion with nested arrays, use spread instead
                         const newMatchedPairs = [...currentMatched, [firstCard, move].sort()];
                         updateData.matchedPairs = newMatchedPairs;
                         updateData[`players.${this.currentUser.uid}.score`] = (gameData.players[this.currentUser.uid]?.score || 0) + 1;
                         
-                        // Check if game is complete
                         if (newMatchedPairs.length >= 8) {
                             const playerScore = (gameData.players[this.currentUser.uid]?.score || 0) + 1;
                             const opponentScore = gameData.players[this.opponent]?.score || 0;
@@ -533,15 +908,12 @@ class GameManager {
                             }
                             updateData.currentTurn = null;
                         } else {
-                            // Player gets another turn for matching
                             updateData.currentTurn = this.currentUser.uid;
                         }
                     } else {
-                        // No match - switch turns
                         updateData.currentTurn = nextTurn;
                         updateData.waitingForFlipBack = true;
                         
-                        // After a delay, flip cards back
                         setTimeout(async () => {
                             try {
                                 await updateDoc(gameRef, {
@@ -555,7 +927,6 @@ class GameManager {
                         }, 1500);
                     }
                     
-                    // Clear selection for next turn (unless we're waiting for flip back)
                     if (!updateData.waitingForFlipBack) {
                         updateData.currentSelection = [];
                     }
@@ -575,6 +946,12 @@ class GameManager {
             currentGame: this.currentGame,
             currentGameSession: this.currentGameSession
         });
+        
+        // Clear timer if it's running
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+        }
         
         // Store the game ID before clearing it
         const gameId = this.currentGame?.id || this.currentGameSession?.id;
@@ -673,14 +1050,32 @@ class GameManager {
         
         const gameTypeId = this.currentGame.type.replace(/-/g, '');
         const turnIndicator = document.getElementById(`${gameTypeId}TurnIndicator`);
-        if (turnIndicator) {
-            turnIndicator.textContent = this.isMyTurn ? 'Your turn!' : `${this.opponentName}'s turn`;
-            turnIndicator.className = `turn-indicator ${this.isMyTurn ? 'your-turn' : 'opponent-turn'}`;
+        
+        if (this.currentGame.type === 'rock-paper-scissors') {
+            // For RPS: Show "Make your move!" instead of turn indicator
+            if (turnIndicator) {
+                turnIndicator.textContent = 'Make your move!';
+                turnIndicator.className = 'turn-indicator your-turn';
+            }
+        } else {
+            if (turnIndicator) {
+                turnIndicator.textContent = this.isMyTurn ? 'Your turn!' : `${this.opponentName}'s turn`;
+                turnIndicator.className = `turn-indicator ${this.isMyTurn ? 'your-turn' : 'opponent-turn'}`;
+            }
         }
 
-        document.querySelectorAll('.rps-choice, .ttt-cell, .coin-choice, .number-input, .memory-card, .scramble-input').forEach(element => {
-            element.disabled = !this.isMyTurn;
-        });
+        // Enable/disable controls based on game type
+        if (this.currentGame.type === 'rock-paper-scissors') {
+            // RPS: Always enabled after countdown
+            document.querySelectorAll('.rps-choice').forEach(element => {
+                element.disabled = false;
+            });
+        } else {
+            // Other games: Only enable on player's turn
+            document.querySelectorAll('.rps-choice, .ttt-cell, .coin-choice, .number-input, .memory-card, .scramble-input').forEach(element => {
+                element.disabled = !this.isMyTurn;
+            });
+        }
     }
 
     closeAllGameModals() {
@@ -691,6 +1086,19 @@ class GameManager {
 
     closeGame() {
         console.log('closeGame called');
+        
+        // Clear timer if it's running
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+        }
+        
+        // Remove countdown timer if it exists
+        const timerDisplay = document.querySelector('.countdown-timer');
+        if (timerDisplay) {
+            document.body.removeChild(timerDisplay);
+        }
+        
         this.closeAllGameModals();
         
         if (this.gameSessionListener) {
@@ -707,6 +1115,11 @@ class GameManager {
     }
 
     cleanup() {
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+        }
+        
         if (this.invitesListener) this.invitesListener();
         if (this.gamesListener) this.gamesListener();
         if (this.gameSessionListener) this.gameSessionListener();
@@ -1536,6 +1949,106 @@ class GameManager {
                 font-weight: bold;
             }
 
+            /* Countdown Timer Styles */
+            .countdown-timer {
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(0,0,0,0.8);
+                color: white;
+                padding: 30px;
+                border-radius: 15px;
+                font-size: 3em;
+                font-weight: bold;
+                z-index: 10003;
+                text-align: center;
+            }
+
+            /* Celebration Popup Styles */
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+
+            @keyframes popIn {
+                0% { transform: scale(0.5); opacity: 0; }
+                70% { transform: scale(1.1); }
+                100% { transform: scale(1); opacity: 1; }
+            }
+
+            @keyframes bounce {
+                0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+                40% { transform: translateY(-10px); }
+                60% { transform: translateY(-5px); }
+            }
+
+            .celebration-popup {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.8);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10004;
+                animation: fadeIn 0.3s ease-in;
+            }
+
+            .celebration-content {
+                background: linear-gradient(135deg, #4CAF50, #45a049);
+                color: white;
+                padding: 40px;
+                border-radius: 20px;
+                text-align: center;
+                max-width: 300px;
+                animation: popIn 0.5s ease-out;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            }
+
+            .celebration-popup.victory .celebration-content {
+                background: linear-gradient(135deg, #4CAF50, #45a049);
+            }
+
+            .celebration-popup.defeat .celebration-content {
+                background: linear-gradient(135deg, #f44336, #d32f2f);
+            }
+
+            .celebration-popup.draw .celebration-content {
+                background: linear-gradient(135deg, #FF9800, #F57C00);
+            }
+
+            .celebration-emoji {
+                font-size: 4em;
+                margin-bottom: 20px;
+                animation: bounce 1s infinite;
+            }
+
+            .celebration-message {
+                font-size: 1.5em;
+                font-weight: bold;
+                margin-bottom: 25px;
+                line-height: 1.4;
+            }
+
+            .celebration-close {
+                background: rgba(255,255,255,0.2);
+                color: white;
+                border: 2px solid white;
+                padding: 12px 30px;
+                border-radius: 25px;
+                font-size: 1.1em;
+                font-weight: bold;
+                cursor: pointer;
+                transition: all 0.3s ease;
+            }
+
+            .celebration-close:hover {
+                background: rgba(255,255,255,0.3);
+            }
+
             /* Responsive Design */
             @media (max-width: 768px) {
                 .games-grid {
@@ -1564,6 +2077,19 @@ class GameManager {
                 
                 .memory-board {
                     grid-template-columns: repeat(3, 1fr);
+                }
+                
+                .celebration-content {
+                    margin: 20px;
+                    padding: 30px 20px;
+                }
+                
+                .celebration-emoji {
+                    font-size: 3em;
+                }
+                
+                .celebration-message {
+                    font-size: 1.3em;
                 }
             }
             </style>
@@ -1632,17 +2158,21 @@ class RockPaperScissors extends BaseGame {
     updateState(gameData) {
         const moves = gameData.moves || [];
         
-        if (moves.length >= 2) {
-            const lastTwoMoves = moves.slice(-2);
-            this.showResult(lastTwoMoves);
-        } else if (moves.length === 1) {
-            this.showResult([moves[0]]);
+        // Show the most recent moves
+        const unprocessedMoves = moves.filter(m => !m.processed);
+        const processedMoves = moves.filter(m => m.processed);
+        
+        if (unprocessedMoves.length > 0) {
+            this.showResult(unprocessedMoves);
+        } else if (processedMoves.length >= 2) {
+            const lastTwoMoves = processedMoves.slice(-2);
+            this.showResult(lastTwoMoves, true);
         }
         
         this.updateScore(gameData.players, 'rpsScore');
     }
 
-    showResult(moves) {
+    showResult(moves, showWinner = false) {
         const resultDiv = document.getElementById('rpsResult');
         if (resultDiv && moves.length > 0) {
             let resultHTML = '';
@@ -1651,19 +2181,35 @@ class RockPaperScissors extends BaseGame {
                 const emoji = { rock: '✊', paper: '✋', scissors: '✌️' }[move.move];
                 resultHTML += `${playerName} chose ${emoji} ${move.move}<br>`;
             });
+            
+            if (showWinner && moves.length === 2) {
+                const winner = this.checkWinner(moves);
+                if (winner === this.gameManager.currentUser.uid) {
+                    resultHTML += '<br>🎉 You win this round!';
+                } else if (winner === this.gameManager.opponent) {
+                    resultHTML += `<br>😔 ${this.gameManager.opponentName} wins this round!`;
+                } else {
+                    resultHTML += '<br>🤝 It\'s a draw!';
+                }
+            }
+            
             resultDiv.innerHTML = resultHTML;
         }
     }
 
-    isValidMove(move, moves) {
+    isValidMove(move, moves, gameData) {
+        // Check if player has already made an unprocessed move
+        const userMove = moves.find(m => m.playerId === this.gameManager.currentUser.uid && !m.processed);
+        if (userMove) {
+            return false;
+        }
         return this.validMoves.includes(move);
     }
 
     checkWinner(moves) {
         if (moves.length < 2) return null;
         
-        const lastTwoMoves = moves.slice(-2);
-        const [move1, move2] = lastTwoMoves;
+        const [move1, move2] = moves;
         
         if (move1.playerId === move2.playerId) return null;
         
