@@ -953,7 +953,7 @@ body.account-page .account-container {
     margin-bottom: 2px;
     word-wrap: break-word;
 }
-
+/* Message content styling */.message-content {    margin-bottom: 2px;    line-height: 19px;    word-wrap: break-word;}.message-image {    max-width: 100%;    max-height: 300px;    border-radius: 7.5px;    margin-bottom: 4px;    min-width:200px;}
 /* Message images and videos with transparent backgrounds */
 .message-image,
 .message-video {

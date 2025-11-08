@@ -2190,7 +2190,7 @@ function setupMessageSwipe() {
         const messageElement = e.target.closest('.message');
         if (messageElement && messageElement.classList.contains('received')) {
             // ALLOW image viewing - if click is on an image, don't prevent default behavior
-            if (e.target.tagName === 'IMG' && e.target.classList.contains('.message-image')) {
+            if (e.target.tagName === 'IMG' && e.target.classList.contains('message-image')) {
                 return; // Allow the image viewer to handle this click
             }
             
@@ -3304,16 +3304,22 @@ function initLoginPage() {
             const password = document.getElementById('loginPassword').value;
 
             try {
-                // Use enhanced login that checks for disabled accounts
-                const loginSuccessful = await enhancedLogin(email, password);
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
                 
-                if (loginSuccessful) {
-                    showNotification('Login successful! Redirecting...', 'success');
-                    setTimeout(() => {
-                        window.location.href = 'dashboard.html';
-                    }, 1500);
+                // Manually check if account is disabled
+                const userDoc = await getDoc(doc(db, 'users', user.uid));
+                if (userDoc.exists() && userDoc.data().accountDisabled) {
+                    // DON'T sign out - just redirect to disabled page
+                    // This keeps the user logged in so they can request verification emails
+                    window.location.href = 'disabled.html';
+                    return;
                 }
-                // If loginSuccessful is false, user was redirected to disabled page
+                
+                showNotification('Login successful! Redirecting...', 'success');
+                setTimeout(() => {
+                    window.location.href = 'dashboard.html';
+                }, 1500);
                 
             } catch (error) {
                 logError(error, 'login');
@@ -3368,16 +3374,34 @@ function initSignupPage() {
             }
 
             try {
+                // Tell verification manager this is a new signup
+                if (window.verificationManager) {
+                    window.verificationManager.markAsNewSignup();
+                }
+
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
                 const user = userCredential.user;
                 
-                // SIMPLIFIED: No email verification required
-                showNotification('Account created successfully!', 'success');
+                // Send email verification
+                await sendEmailVerification(user);
                 
-                // Redirect to dashboard immediately
-                setTimeout(() => {
-                    window.location.href = 'dashboard.html';
-                }, 1500);
+                // Create user profile in Firestore
+                await setDoc(doc(db, 'users', user.uid), {
+                    email: email,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                    profileComplete: false,
+                    chatPoints: 12,
+                    paymentHistory: [],
+                    accountDisabled: false,
+                    verificationSentAt: serverTimestamp()
+                });
+                
+                // Show the alert BEFORE any redirects can happen
+                alert('IMPORTANT: Verification email sent!\n\nPlease check your email (including SPAM folder) for the verification link.\n\nYou MUST verify your email within 3 days or your account will be disabled.');
+                
+                // Now redirect to dashboard
+                window.location.href = 'dashboard.html';
                 
             } catch (error) {
                 logError(error, 'signup');
