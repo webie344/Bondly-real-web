@@ -1167,6 +1167,9 @@ body.account-page .account-container {
     text-align: right;
     opacity: 0;
 }
+.online-status{
+    font-size:9px;
+}
 
 /* Messages Page */
 .messages-container {
