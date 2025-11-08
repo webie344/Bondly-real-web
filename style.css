@@ -244,7 +244,66 @@ img {
     background-color: var(--text-color);
     transition: var(--transition);
 }
+/* cut.css - Styles for truncated names - SAFE VERSION */
 
+/* Only apply to specific name elements, not timestamps */
+.message-card .message-content h3,
+.chat-header .chat-partner-name,
+#chatPartnerName,
+.reply-preview .reply-preview-name {
+    max-width: 100px; /* Adjusted width for 7-char names */
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* EXCLUDE timestamps from these styles */
+.message-time,
+.message-card .message-time,
+.voice-message-duration,
+.video-duration,
+.typing-indicator .message-time {
+    max-width: none !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+}
+
+/* Add tooltip styles only for truncated names */
+.message-card .message-content h3[title],
+.chat-header .chat-partner-name[title],
+#chatPartnerName[title],
+.reply-preview .reply-preview-name[title] {
+    position: relative;
+    cursor: help;
+}
+
+.message-card .message-content h3[title]:hover::after,
+.chat-header .chat-partner-name[title]:hover::after,
+#chatPartnerName[title]:hover::after,
+.reply-preview .reply-preview-name[title]:hover::after {
+    content: attr(title);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+/* Ensure timestamps remain fully visible */
+.message-card .message-time {
+    max-width: none;
+    opacity: 0.7;
+    font-size: 0.8em;
+}
 /* Hero Section */
 .hero {
     height: 100vh;
@@ -779,7 +838,7 @@ body.account-page .account-container {
     flex: 1;
     background-color: var(--white);
     border: 1px solid var(--border-color);
-    color: var(--text-color);
+    color: black;
     border-radius: 6px;
     padding: 8px;
 }
@@ -789,7 +848,7 @@ body.account-page .account-container {
     height: 40px;
     border: none;
     background-color: var(--primary-color);
-    color: white;
+    color: black;
     border-radius: 6px;
     cursor: pointer;
     transition: var(--transition);
@@ -804,6 +863,7 @@ body.account-page .account-container {
     flex-wrap: wrap;
     gap: 0.5rem;
     margin-bottom: 1rem;
+    color:black;
 }
 
 /* Chat Page */

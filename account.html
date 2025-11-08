@@ -6,8 +6,9 @@
     <title>My Account - Bondly</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="location.css">
+    <link rel="stylesheet" href="chat.css">
     <style>
-        :root {
+        :root 
             /* Your existing CSS variables */
         }
 
@@ -75,7 +76,7 @@
         .interest-tag {
             display: inline-block;
             background-color: var(--primary-blue);
-            color: white;
+            color: black;
             padding: 6px 12px;
             border-radius: 16px;
             margin: 5px 5px 5px 0;
@@ -957,6 +958,96 @@
             }
         }
 
+        /* Chat Theme Styles */
+        .themes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .theme-item {
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .theme-preview {
+            width: 100%;
+            height: 80px;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .theme-preview:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .theme-preview.selected {
+            border-color: var(--primary-blue);
+            box-shadow: 0 0 0 2px var(--primary-blue);
+        }
+
+        .theme-preview-content {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+        }
+
+        .theme-label {
+            text-align: center;
+            margin-top: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--discord-text);
+        }
+
+        .chat-preview {
+            background: var(--chat-background);
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 15px;
+            border: 1px solid var(--border-color);
+            min-height: 150px;
+        }
+
+        .preview-messages {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .preview-message {
+            max-width: 70%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .preview-message.sent {
+            align-self: flex-end;
+            background-color: var(--message-sent-bg);
+            color: var(--message-sent-text);
+        }
+
+        .preview-message.received {
+            align-self: flex-start;
+            background-color: var(--message-received-bg);
+            color: var(--message-received-text);
+            border: 1px solid var(--border-color);
+        }
+
         @media (max-width: 768px) {
             .display-options {
                 grid-template-columns: 1fr;
@@ -964,6 +1055,19 @@
             
             .wallpapers-grid, .animations-grid {
                 grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            }
+
+            .themes-grid {
+                grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+                gap: 10px;
+            }
+
+            .theme-preview {
+                height: 60px;
+            }
+
+            .theme-preview-content {
+                font-size: 12px;
             }
 
             .user-post-item .post-header {
@@ -1374,6 +1478,16 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- CHAT THEMES SECTION -->
+                    <div class="display-option-group" style="margin-top: 30px;">
+                        <h3><i class="fas fa-comments"></i> Chat Themes</h3>
+                        <p class="section-description">Choose how your chat interface looks</p>
+                        
+                        <div class="themes-grid" id="themesGrid">
+                            <!-- Themes will be dynamically loaded by chat.js -->
+                        </div>
+                    </div>
                     
                     <div class="preview-section">
                         <h3><i class="fas fa-eye"></i> Live Preview</h3>
@@ -1381,6 +1495,24 @@
                         <div class="preview-container" id="displayPreview">
                             <div class="preview-overlay">Hover to see preview</div>
                             <div class="no-selection">Select a wallpaper or animation to see preview</div>
+                        </div>
+                        
+                        <!-- CHAT THEME PREVIEW -->
+                        <div style="margin-top: 20px;">
+                            <h4><i class="fas fa-comment"></i> Chat Theme Preview</h4>
+                            <div class="chat-preview" id="chatPreview">
+                                <div class="preview-messages">
+                                    <div class="preview-message received">
+                                        Hey there! How's the new theme?
+                                    </div>
+                                    <div class="preview-message sent">
+                                        Love it! The colors are amazing! 🎨
+                                    </div>
+                                    <div class="preview-message received">
+                                        Perfect! Which one is your favorite?
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     
@@ -1484,6 +1616,7 @@
     <script type="module" src="call.js"></script>
     <script type="module" src="message.js"></script>
     <script type="module" src="app.js"></script>
+    <script type="module" src="chat.js"></script>
     <!-- Add ONLY this to your HTML files -->
 <script type="module" src="pagination.js"></script>
     <script type="module" src="creative.js"></script>
@@ -1496,134 +1629,7 @@
     <!-- Load userdisplay.js FIRST -->
     <script type="module" src="userdisplay.js"></script>
 
-    <!-- Share functionality -->
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const profileLink = document.getElementById('profileLink');
-            const copyLinkBtn = document.getElementById('copyLinkBtn');
-            const copyFeedback = document.getElementById('copyFeedback');
-            const shareButton = document.getElementById('shareButton');
-            
-            // Wait for app.js to initialize and set currentUser
-            function waitForUser() {
-                if (typeof currentUser !== 'undefined' && currentUser) {
-                    initializeShare();
-                } else {
-                    setTimeout(waitForUser, 100);
-                }
-            }
-            
-            function initializeShare() {
-                console.log('Share initialized for user:', currentUser.uid);
-                
-                // Generate basic profile URL
-                const baseUrl = window.location.origin;
-                const profileUrl = `${baseUrl}/profile.html?id=${currentUser.uid}`;
-                profileLink.value = profileUrl;
-                
-                // Copy link functionality
-                copyLinkBtn.addEventListener('click', function() {
-                    profileLink.select();
-                    profileLink.setSelectionRange(0, 99999);
-                    
-                    if (navigator.clipboard && navigator.clipboard.writeText) {
-                        navigator.clipboard.writeText(profileUrl).then(() => {
-                            showCopyFeedback('Profile link copied to clipboard!', 'success');
-                        }).catch(() => {
-                            fallbackCopy();
-                        });
-                    } else {
-                        fallbackCopy();
-                    }
-                    
-                    function fallbackCopy() {
-                        try {
-                            const successful = document.execCommand('copy');
-                            if (successful) {
-                                showCopyFeedback('Profile link copied to clipboard!', 'success');
-                            }
-                        } catch (err) {
-                            showCopyFeedback('Failed to copy link', 'error');
-                        }
-                    }
-                });
-                
-                // Share functionality
-                shareButton.addEventListener('click', async function() {
-                    // Try to get user data for better share text
-                    let shareText = 'Check out my Bondly profile!';
-                    let shareTitle = 'My Bondly Profile';
-                    
-                    try {
-                        // Use the global db reference from app.js
-                        if (typeof db !== 'undefined') {
-                            const userRef = doc(db, 'users', currentUser.uid);
-                            const userSnap = await getDoc(userRef);
-                            
-                            if (userSnap.exists()) {
-                                const userData = userSnap.data();
-                                const userName = userData.name || 'My Profile';
-                                shareTitle = `${userName} on Bondly`;
-                                
-                                let locationText = '';
-                                if (userData.age && userData.location) {
-                                    locationText = `${userData.age} • ${userData.location}`;
-                                } else if (userData.age) {
-                                    locationText = userData.age;
-                                } else if (userData.location) {
-                                    locationText = userData.location;
-                                }
-                                
-                                shareText = `Connect with ${userName} on Bondly!`;
-                                if (locationText) shareText += `\n${locationText}`;
-                                if (userData.bio) shareText += `\n\n${userData.bio}`;
-                                shareText += `\n\nCheck out my profile: ${profileUrl}`;
-                            }
-                        }
-                    } catch (error) {
-                        console.log('Using basic share data:', error);
-                    }
-                    
-                    const shareData = {
-                        title: shareTitle,
-                        text: shareText,
-                        url: profileUrl
-                    };
-                    
-                    if (navigator.share) {
-                        navigator.share(shareData)
-                            .then(() => console.log('Shared successfully'))
-                            .catch((error) => {
-                                if (error.name !== 'AbortError') {
-                                    showCopyFeedback('Link copied to clipboard', 'info');
-                                    copyToClipboard(profileUrl);
-                                }
-                            });
-                    } else {
-                        showCopyFeedback('Link copied to clipboard', 'info');
-                        copyToClipboard(profileUrl);
-                    }
-                });
-            }
-            
-            function showCopyFeedback(message, type) {
-                copyFeedback.textContent = message;
-                copyFeedback.className = `copy-feedback ${type}`;
-                setTimeout(() => {
-                    copyFeedback.className = 'copy-feedback';
-                }, 3000);
-            }
-            
-            function copyToClipboard(text) {
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(text);
-                }
-            }
-            
-            // Start waiting for user
-            waitForUser();
-        });
-    </script>
+
 
     <!-- Display settings script -->
     <script type="module">

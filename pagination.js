@@ -163,7 +163,7 @@ class InvisiblePagination {
             });
         });
 
-        console.log(`Attached pagination to ${prevButtons.length} prev buttons, ${nextButtons.length} next buttons, ${pageButtons.length} page buttons`);
+        
     }
 
     async goToPage(page) {
@@ -281,13 +281,13 @@ function initializeExistingPagination() {
             orderBy: 'createdAt',
             onDataLoad: (profiles, state) => {
                 // This will be called by your existing displayProfiles function
-                console.log('Pagination loaded profiles:', profiles.length);
+                
                 
                 // If you have existing profile display, it will work automatically
                 // The pagination just provides the right data subset
             },
             onPageChange: (currentPage, totalPages) => {
-                console.log('Page changed to:', currentPage);
+                
                 // Your existing page change logic here
             }
         });
@@ -320,13 +320,13 @@ function initializeExistingPagination() {
             itemsPerPage: 25,
             orderBy: 'updatedAt',
             onDataLoad: (conversations, state) => {
-                console.log('Pagination loaded conversations:', conversations.length);
+
                 // Your existing displayMessages function will receive this data
             }
         });
     }
 
-    console.log('Invisible pagination initialized - working with your existing controls');
+
 }
 
 // Global access
