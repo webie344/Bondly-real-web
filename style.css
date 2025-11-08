@@ -1261,10 +1261,42 @@ body.account-page .account-container {
 }
 
 .message-time {
-    font-size: 0.8rem;
+    font-size: 0.6rem;
     color: var(--text-muted);
 }
+/* Position timestamp at the far right of message card */
+.message-card {
+    position: relative;
+    padding-right: 80px; /* Make space for timestamp */
+}
 
+.message-card .message-time {
+    position: absolute;
+    right: 16px;
+    top: 16px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: normal;
+    opacity: 0.8;
+    white-space: nowrap;
+}
+
+/* Remove flex styles from username header */
+.message-content h3 {
+    display: block;
+    margin-bottom: 0.3rem;
+    width: auto;
+}
+
+/* Ensure username truncates properly */
+.message-content h3 span:first-child {
+    display: inline-block;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: top;
+}
 .unread-count {
     background-color: var(--primary-color);
     color: white;

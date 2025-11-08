@@ -51,6 +51,58 @@ const cloudinaryConfig = {
 // Emoji reactions
 const EMOJI_REACTIONS = ['👍', '❤️', '🔥', '😘', '👎', '🤘', '💯'];
 
+// Event listener management system
+class EventManager {
+    constructor() {
+        this.listeners = new Map();
+    }
+
+    addListener(element, event, handler, options = {}) {
+        if (!element) {
+            console.warn('Cannot add listener to null element for event:', event);
+            return () => {};
+        }
+        
+        const key = `${element.id || element.className}-${event}-${Date.now()}`;
+        element.addEventListener(event, handler, options);
+        this.listeners.set(key, { element, event, handler });
+        
+        return () => this.removeListener(key);
+    }
+
+    removeListener(key) {
+        const listener = this.listeners.get(key);
+        if (listener) {
+            const { element, event, handler } = listener;
+            element.removeEventListener(event, handler);
+            this.listeners.delete(key);
+        }
+    }
+
+    clearAll() {
+        this.listeners.forEach((listener, key) => {
+            this.removeListener(key);
+        });
+    }
+
+    // Add multiple listeners at once
+    addListeners(configs) {
+        const removers = [];
+        configs.forEach(config => {
+            const remover = this.addListener(
+                config.element, 
+                config.event, 
+                config.handler, 
+                config.options
+            );
+            removers.push(remover);
+        });
+        return removers;
+    }
+}
+
+const eventManager = new EventManager();
+
 // Cache configuration
 class LocalCache {
     constructor() {
@@ -545,6 +597,9 @@ function cleanupAllListeners() {
     if (recordingTimer) clearInterval(recordingTimer);
     if (videoRecordingTimer) clearInterval(videoRecordingTimer);
     if (longPressTimer) clearTimeout(longPressTimer);
+    
+    // Clear all event listeners
+    eventManager.clearAll();
 }
 
 // Enhanced logout function
@@ -727,346 +782,346 @@ document.addEventListener('DOMContentLoaded', () => {
             50% { height: 15px; }
         }
         /* FIXED: Video message styles for better appearance */
-.video-message {
-    max-width: 300px;
-    border-radius: 12px;
-    overflow: hidden;
-    position: relative;
-    background: #000;
-    margin: 5px 0;
-}
+        .video-message {
+            max-width: 300px;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            background: #000;
+            margin: 5px 0;
+        }
 
-.video-message video {
-    width: 100%;
-    height: auto;
-    max-height: 400px;
-    border-radius: 12px;
-    object-fit: cover;
-}
+        .video-message video {
+            width: 100%;
+            height: auto;
+            max-height: 400px;
+            border-radius: 12px;
+            object-fit: cover;
+        }
 
-.video-message-controls {
-    position: absolute;
-    bottom: 10px;
-    right: 10px;
-    background: rgba(0, 0, 0, 0.7);
-    border-radius: 20px;
-    padding: 5px 10px;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
+        .video-message-controls {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 20px;
+            padding: 5px 10px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
 
-.video-play-btn {
-    background: none;
-    border: none;
-    color: white;
-    cursor: pointer;
-    font-size: 14px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-}
+        .video-play-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+        }
 
-.video-duration {
-    color: white;
-    font-size: 12px;
-    margin-left: 5px;
-}
+        .video-duration {
+            color: white;
+            font-size: 12px;
+            margin-left: 5px;
+        }
 
-/* FIXED: Reply preview styles for better readability */
-.reply-preview {
-    display: flex;
-    align-items: center;
-    padding: 10px 12px;
-    background: white; /* Dark background for contrast */
-    border-left: 4px solid var(--accent-color);
-    margin-bottom: 10px;
-    border-radius: 8px;
-    border: none;
-}
+        /* FIXED: Reply preview styles for better readability */
+        .reply-preview {
+            display: flex;
+            align-items: center;
+            padding: 10px 12px;
+            background: white;
+            border-left: 4px solid var(--accent-color);
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border: none;
+        }
 
-.reply-preview-content {
-    flex: 1;
-    margin-left: 10px;
-    overflow: hidden;
-}
+        .reply-preview-content {
+            flex: 1;
+            margin-left: 10px;
+            overflow: hidden;
+        }
 
-.reply-preview-text {
-    font-size: 14px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: black; /* Light gray for better readability */
-    font-weight: 500;
-}
+        .reply-preview-text {
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: black;
+            font-weight: 500;
+        }
 
-.reply-preview-name {
-    font-size: 12px;
-    font-weight: bold;
-    color: black;
-    margin-bottom: 2px;
-}
+        .reply-preview-name {
+            font-size: 12px;
+            font-weight: bold;
+            color: black;
+            margin-bottom: 2px;
+        }
 
-.reply-preview-cancel {
-    background: none;
-    border: none;
-    color: #888;
-    cursor: pointer;
-    font-size: 16px;
-    padding: 5px;
-    border-radius: 50%;
-    transition: background-color 0.2s;
-}
+        .reply-preview-cancel {
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 5px;
+            border-radius: 50%;
+            transition: background-color 0.2s;
+        }
 
-.reply-preview-cancel:hover {
-    background: rgba(255, 255, 255, 0.1);
-}
+        .reply-preview-cancel:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
 
-/* Enhanced message reply indicator in chat */
-.reply-indicator {
-    font-size: 12px;
-    color:white;
-    margin-bottom: 4px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-weight: 500;
-}
+        /* Enhanced message reply indicator in chat */
+        .reply-indicator {
+            font-size: 12px;
+            color:white;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 500;
+        }
 
-.reply-indicator i {
-    font-size: 10px;
-}
+        .reply-indicator i {
+            font-size: 10px;
+        }
 
-.reply-message-preview {
-    background: rgba(255, 255, 255, 0.1);
-    border-left: 2px solid var(--accent-color);
-    padding: 6px 10px;
-    margin-bottom: 6px;
-    border-radius: 6px;
-    font-size: 12px;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: #ccc;
-}
+        .reply-message-preview {
+            background: rgba(255, 255, 255, 0.1);
+            border-left: 2px solid var(--accent-color);
+            padding: 6px 10px;
+            margin-bottom: 6px;
+            border-radius: 6px;
+            font-size: 12px;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #ccc;
+        }
 
-/* Improved video recording preview */
-.video-preview {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: black;
-    z-index: 10000;
-    display: none;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-}
+        /* Improved video recording preview */
+        .video-preview {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+            z-index: 10000;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
 
-.video-preview video {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-}
+        .video-preview video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
 
-.video-preview-controls {
-    position: absolute;
-    bottom: 40px;
-    left: 0;
-    right: 0;
-    display: flex;
-    justify-content: center;
-    gap: 20px;
-    padding: 20px;
-}
+        .video-preview-controls {
+            position: absolute;
+            bottom: 40px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            padding: 20px;
+        }
 
-.video-preview-btn {
-    background: rgba(255, 255, 255, 0.2);
-    color: white;
-    border: none;
-    border-radius: 50%;
-    width: 60px;
-    height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    font-size: 20px;
-    transition: background-color 0.2s;
-}
+        .video-preview-btn {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 20px;
+            transition: background-color 0.2s;
+        }
 
-.video-preview-btn:hover {
-    background: rgba(255, 255, 255, 0.3);
-}
+        .video-preview-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
 
-/* Better video recording indicator */
-.video-recording-indicator {
-    display: none;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 15px;
-    background: #2a2a2a;
-    border-radius: 25px;
-    margin: 10px 0;
-    border: 1px solid #444;
-}
+        /* Better video recording indicator */
+        .video-recording-indicator {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 15px;
+            background: #2a2a2a;
+            border-radius: 25px;
+            margin: 10px 0;
+            border: 1px solid #444;
+        }
 
-.video-recording-timer {
-    font-size: 14px;
-    color: #ff4444;
-    font-weight: bold;
-}
+        .video-recording-timer {
+            font-size: 14px;
+            color: #ff4444;
+            font-weight: bold;
+        }
 
-.video-recording-controls {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-}
+        .video-recording-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
 
-.recording-dot {
-    width: 12px;
-    height: 12px;
-    background-color: #ff4444;
-    border-radius: 50%;
-    animation: recording-pulse 1.5s infinite;
-}
+        .recording-dot {
+            width: 12px;
+            height: 12px;
+            background-color: #ff4444;
+            border-radius: 50%;
+            animation: recording-pulse 1.5s infinite;
+        }
 
-@keyframes recording-pulse {
-    0%, 100% { 
-        opacity: 1; 
-        transform: scale(1);
-    }
-    50% { 
-        opacity: 0.3; 
-        transform: scale(0.8);
-    }
-}
+        @keyframes recording-pulse {
+            0%, 100% { 
+                opacity: 1; 
+                transform: scale(1);
+            }
+            50% { 
+                opacity: 0.3; 
+                transform: scale(0.8);
+            }
+        }
 
-/* Improved voice message styles */
-.voice-message {
-    max-width: 280px;
-    padding: 12px 15px;
-    border-radius: 20px;
-    margin: 5px 0;
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    background: var(--accent-color);
-}
+        /* Improved voice message styles */
+        .voice-message {
+            max-width: 280px;
+            padding: 12px 15px;
+            border-radius: 20px;
+            margin: 5px 0;
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--accent-color);
+        }
 
-.voice-message.sent {
-    background: var(--accent-color);
-    color: white;
-    align-self: flex-end;
-}
+        .voice-message.sent {
+            background: var(--accent-color);
+            color: white;
+            align-self: flex-end;
+        }
 
-.voice-message.received {
-    background: #3a3a3a;
-    color: white;
-    align-self: flex-start;
-}
+        .voice-message.received {
+            background: #3a3a3a;
+            color: white;
+            align-self: flex-start;
+        }
 
-.voice-message-controls {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-}
+        .voice-message-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+        }
 
-.voice-message-play-btn {
-    background: rgba(255, 255, 255, 0.2);
-    border: none;
-    border-radius: 50%;
-    color: white;
-    font-size: 14px;
-    cursor: pointer;
-    padding: 8px;
-    width: 35px;
-    height: 35px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background-color 0.2s;
-}
+        .voice-message-play-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            padding: 8px;
+            width: 35px;
+            height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+        }
 
-.voice-message-play-btn:hover {
-    background: rgba(255, 255, 255, 0.3);
-}
+        .voice-message-play-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
 
-.voice-message-duration {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.8);
-    min-width: 40px;
-}
+        .voice-message-duration {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.8);
+            min-width: 40px;
+        }
 
-.waveform {
-    height: 25px;
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 2px;
-}
+        .waveform {
+            height: 25px;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 2px;
+        }
 
-.waveform-bar {
-    background-color: currentColor;
-    width: 3px;
-    border-radius: 3px;
-    transition: height 0.2s ease;
-    flex: 1;
-}
+        .waveform-bar {
+            background-color: currentColor;
+            width: 3px;
+            border-radius: 3px;
+            transition: height 0.2s ease;
+            flex: 1;
+        }
 
-.waveform-bar.active {
-    animation: waveform-animation 1.2s infinite ease-in-out;
-}
+        .waveform-bar.active {
+            animation: waveform-animation 1.2s infinite ease-in-out;
+        }
 
-@keyframes waveform-animation {
-    0%, 100% { height: 5px; }
-    50% { height: 15px; }
-}
+        @keyframes waveform-animation {
+            0%, 100% { height: 5px; }
+            50% { height: 15px; }
+        }
 
-/* Message image improvements */
-.message-image {
-    max-width: 300px;
-    max-height: 400px;
-    border-radius: 12px;
-    object-fit: cover;
-}
+        /* Message image improvements */
+        .message-image {
+            max-width: 300px;
+            max-height: 400px;
+            border-radius: 12px;
+            object-fit: cover;
+        }
 
-/* Responsive video styles */
-@media (max-width: 768px) {
-    .video-message {
-        max-width: 300px;
-    }
-    
-    .video-message video {
-        max-height: 300px;
-    }
-    
-    .message-image {
-        max-width: 250px;
-        max-height: 300px;
-    }
-}
+        /* Responsive video styles */
+        @media (max-width: 768px) {
+            .video-message {
+                max-width: 300px;
+            }
+            
+            .video-message video {
+                max-height: 300px;
+            }
+            
+            .message-image {
+                max-width: 250px;
+                max-height: 300px;
+            }
+        }
 
-@media (max-width: 480px) {
-    .video-message {
-        max-width: 300px;
-    }
-    
-    .video-message video {
-        max-height: 300px;
-    }
-    
-    .message-image {
-        max-width: 200px;
-        max-height: 250px;
-    }
-}
+        @media (max-width: 480px) {
+            .video-message {
+                max-width: 300px;
+            }
+            
+            .video-message video {
+                max-height: 300px;
+            }
+            
+            .message-image {
+                max-width: 200px;
+                max-height: 250px;
+            }
+        }
         /* Video message styles */
         .video-message {
             max-width: auto;
@@ -1129,11 +1184,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         /* Online status indicator */
         .online-status {
-            position: absole;
+            
             bottom: 10px;
             right: 10px;
-            width: 15px;
-            height: 15px;
+            width: 9px;
+            height: 9px;
             border-radius: 50%;
             border: 2px solid white;
         }
@@ -1348,8 +1403,6 @@ document.addEventListener('DOMContentLoaded', () => {
             cursor: not-allowed;
         }
         
-
-        
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.7; }
@@ -1372,7 +1425,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize navbar toggle for mobile
     if (navToggle) {
-        navToggle.addEventListener('click', () => {
+        eventManager.addListener(navToggle, 'click', () => {
             navToggle.classList.toggle('active');
             navMenu.classList.toggle('active');
         });
@@ -1380,7 +1433,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Close mobile menu when clicking on a link
     document.querySelectorAll('.nav-links').forEach(link => {
-        link.addEventListener('click', () => {
+        eventManager.addListener(link, 'click', () => {
             navToggle.classList.remove('active');
             navMenu.classList.remove('active');
         });
@@ -3298,7 +3351,7 @@ function initLoginPage() {
     showFastLoadingMessage();
 
     if (loginForm) {
-        loginForm.addEventListener('submit', async (e) => {
+        eventManager.addListener(loginForm, 'submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('loginEmail').value;
             const password = document.getElementById('loginPassword').value;
@@ -3329,7 +3382,7 @@ function initLoginPage() {
     }
 
     if (togglePassword) {
-        togglePassword.addEventListener('click', () => {
+        eventManager.addListener(togglePassword, 'click', () => {
             const passwordInput = document.getElementById('loginPassword');
             const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
             passwordInput.setAttribute('type', type);
@@ -3338,7 +3391,7 @@ function initLoginPage() {
     }
 
     if (resetPasswordLink) {
-        resetPasswordLink.addEventListener('click', async (e) => {
+        eventManager.addListener(resetPasswordLink, 'click', async (e) => {
             e.preventDefault();
             const email = prompt('Please enter your email address:');
             if (email) {
@@ -3362,7 +3415,7 @@ function initSignupPage() {
     showFastLoadingMessage();
 
     if (signupForm) {
-        signupForm.addEventListener('submit', async (e) => {
+        eventManager.addListener(signupForm, 'submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('signupEmail').value;
             const password = document.getElementById('signupPassword').value;
@@ -3374,16 +3427,8 @@ function initSignupPage() {
             }
 
             try {
-                // Tell verification manager this is a new signup
-                if (window.verificationManager) {
-                    window.verificationManager.markAsNewSignup();
-                }
-
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
                 const user = userCredential.user;
-                
-                // Send email verification
-                await sendEmailVerification(user);
                 
                 // Create user profile in Firestore
                 await setDoc(doc(db, 'users', user.uid), {
@@ -3393,15 +3438,13 @@ function initSignupPage() {
                     profileComplete: false,
                     chatPoints: 12,
                     paymentHistory: [],
-                    accountDisabled: false,
-                    verificationSentAt: serverTimestamp()
+                    accountDisabled: false
                 });
                 
-                // Show the alert BEFORE any redirects can happen
-                alert('IMPORTANT: Verification email sent!\n\nPlease check your email (including SPAM folder) for the verification link.\n\nYou MUST verify your email within 3 days or your account will be disabled.');
-                
-                // Now redirect to dashboard
-                window.location.href = 'dashboard.html';
+                showNotification('Account created successfully! Redirecting...', 'success');
+                setTimeout(() => {
+                    window.location.href = 'dashboard.html';
+                }, 1500);
                 
             } catch (error) {
                 logError(error, 'signup');
@@ -3411,7 +3454,7 @@ function initSignupPage() {
     }
 
     if (togglePassword) {
-        togglePassword.addEventListener('click', () => {
+        eventManager.addListener(togglePassword, 'click', () => {
             const passwordInput = document.getElementById('signupPassword');
             const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
             passwordInput.setAttribute('type', type);
@@ -3435,35 +3478,35 @@ function initDashboardPage() {
     loadUserChatPoints();
 
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
+        eventManager.addListener(logoutBtn, 'click', handleLogout);
     }
 
     if (mingleBtn) {
-        mingleBtn.addEventListener('click', () => {
+        eventManager.addListener(mingleBtn, 'click', () => {
             window.location.href = 'mingle.html';
         });
     }
 
     if (messagesBtn) {
-        messagesBtn.addEventListener('click', () => {
+        eventManager.addListener(messagesBtn, 'click', () => {
             window.location.href = 'messages.html';
         });
     }
 
     if (profileBtn) {
-        profileBtn.addEventListener('click', () => {
+        eventManager.addListener(profileBtn, 'click', () => {
             window.location.href = 'profile.html';
         });
     }
 
     if (accountBtn) {
-        accountBtn.addEventListener('click', () => {
+        eventManager.addListener(accountBtn, 'click', () => {
             window.location.href = 'account.html';
         });
     }
 
     if (purchasePointsBtn) {
-        purchasePointsBtn.addEventListener('click', () => {
+        eventManager.addListener(purchasePointsBtn, 'click', () => {
             window.location.href = 'payment.html';
         });
     }
@@ -3483,18 +3526,18 @@ function initPaymentPage() {
     loadUserChatPoints();
 
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
+        eventManager.addListener(logoutBtn, 'click', handleLogout);
     }
 
     if (backBtn) {
-        backBtn.addEventListener('click', () => {
+        eventManager.addListener(backBtn, 'click', () => {
             window.location.href = 'dashboard.html';
         });
     }
 
     // Plan selection
     planButtons.forEach(button => {
-        button.addEventListener('click', () => {
+        eventManager.addListener(button, 'click', () => {
             planButtons.forEach(btn => btn.classList.remove('selected'));
             button.classList.add('selected');
             document.getElementById('selectedPlan').value = button.dataset.plan;
@@ -3503,7 +3546,7 @@ function initPaymentPage() {
 
     // Copy wallet address
     copyBtns.forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        eventManager.addListener(btn, 'click', (e) => {
             e.preventDefault();
             const address = btn.dataset.address;
             navigator.clipboard.writeText(address).then(() => {
@@ -3520,7 +3563,7 @@ function initPaymentPage() {
 
     // Payment form submission
     if (paymentForm) {
-        paymentForm.addEventListener('submit', async (e) => {
+        eventManager.addListener(paymentForm, 'submit', async (e) => {
             e.preventDefault();
             
             const plan = document.getElementById('selectedPlan').value;
@@ -3583,7 +3626,7 @@ function initAdminPage() {
     }
 
     if (loginForm) {
-        loginForm.addEventListener('submit', (e) => {
+        eventManager.addListener(loginForm, 'submit', (e) => {
             e.preventDefault();
             const email = document.getElementById('adminEmail').value;
             const password = document.getElementById('adminPassword').value;
@@ -3599,7 +3642,7 @@ function initAdminPage() {
     }
 
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', () => {
+        eventManager.addListener(logoutBtn, 'click', () => {
             sessionStorage.removeItem('adminLoggedIn');
             showLoginForm();
         });
@@ -3650,7 +3693,7 @@ function initAdminPage() {
             
             // Add event listeners to approve/reject buttons
             document.querySelectorAll('.approve-btn').forEach(btn => {
-                btn.addEventListener('click', async () => {
+                eventManager.addListener(btn, 'click', async () => {
                     const userId = btn.dataset.user;
                     const txId = btn.dataset.tx;
                     const plan = btn.dataset.plan;
@@ -3695,7 +3738,7 @@ function initAdminPage() {
             });
             
             document.querySelectorAll('.reject-btn').forEach(btn => {
-                btn.addEventListener('click', async () => {
+                eventManager.addListener(btn, 'click', async () => {
                     const userId = btn.dataset.user;
                     const txId = btn.dataset.tx;
                     
@@ -3750,13 +3793,13 @@ function initMinglePage() {
     loadProfiles();
 
     if (dislikeBtn) {
-        dislikeBtn.addEventListener('click', () => {
+        eventManager.addListener(dislikeBtn, 'click', () => {
             showNextProfile();
         });
     }
 
     if (likeBtn) {
-        likeBtn.addEventListener('click', async () => {
+        eventManager.addListener(likeBtn, 'click', async () => {
             const currentProfile = profiles[currentProfileIndex];
             if (currentProfile) {
                 try {
@@ -3787,7 +3830,7 @@ function initMinglePage() {
     }
 
     if (viewProfileBtn) {
-        viewProfileBtn.addEventListener('click', () => {
+        eventManager.addListener(viewProfileBtn, 'click', () => {
             const currentProfile = profiles[currentProfileIndex];
             if (currentProfile) {
                 window.location.href = `profile.html?id=${currentProfile.id}`;
@@ -3796,7 +3839,7 @@ function initMinglePage() {
     }
 
     if (chatBtn) {
-        chatBtn.addEventListener('click', () => {
+        eventManager.addListener(chatBtn, 'click', () => {
             const currentProfile = profiles[currentProfileIndex];
             if (currentProfile) {
                 window.location.href = `chat.html?id=${currentProfile.id}`;
@@ -3805,17 +3848,19 @@ function initMinglePage() {
     }
 
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
+        eventManager.addListener(logoutBtn, 'click', handleLogout);
     }
 
     if (dashboardBtn) {
-        dashboardBtn.addEventListener('click', () => {
+        eventManager.addListener(dashboardBtn, 'click', () => {
             window.location.href = 'dashboard.html';
         });
     }
 }
 
 function initProfilePage() {
+    console.log('Initializing profile page...');
+    
     const backToMingle = document.getElementById('backToMingle');
     const messageProfileBtn = document.getElementById('messageProfileBtn');
     const likeProfileBtn = document.getElementById('likeProfileBtn');
@@ -3846,7 +3891,7 @@ function initProfilePage() {
 
     // Thumbnail click event
     thumbnails.forEach(thumbnail => {
-        thumbnail.addEventListener('click', () => {
+        eventManager.addListener(thumbnail, 'click', () => {
             thumbnails.forEach(t => t.classList.remove('active'));
             thumbnail.classList.add('active');
             document.getElementById('mainProfileImage').src = thumbnail.src;
@@ -3854,94 +3899,125 @@ function initProfilePage() {
     });
 
     if (backToMingle) {
-        backToMingle.addEventListener('click', () => {
+        eventManager.addListener(backToMingle, 'click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('Back to mingle clicked');
             window.location.href = 'mingle.html';
         });
+    } else {
+        console.error('Back to mingle button not found');
     }
 
     if (messageProfileBtn) {
-        messageProfileBtn.addEventListener('click', () => {
+        eventManager.addListener(messageProfileBtn, 'click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('Message profile clicked');
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const profileId = urlParams.get('id');
+            
             if (profileId) {
                 window.location.href = `chat.html?id=${profileId}`;
             } else {
                 showNotification('Cannot message this profile', 'error');
             }
         });
+    } else {
+        console.error('Message profile button not found');
     }
 
     if (likeProfileBtn) {
-        likeProfileBtn.addEventListener('click', async () => {
-            // Use the stored profileId
-            const profileIdToLike = window.currentProfileId || profileId;
+        eventManager.addListener(likeProfileBtn, 'click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('Like profile clicked');
             
-            if (!profileIdToLike) {
-                showNotification('Cannot like this profile', 'error');
-                return;
-            }
-
-            if (!currentUser) {
-                showNotification('Please log in to like profiles', 'error');
-                return;
-            }
-
-            try {
-                // Check if already liked to prevent duplicate likes
-                const likedRef = collection(db, 'users', currentUser.uid, 'liked');
-                const likedQuery = query(likedRef, where('userId', '==', profileIdToLike));
-                const likedSnap = await getDocs(likedQuery);
-                
-                if (!likedSnap.empty) {
-                    showNotification('You already liked this profile!', 'info');
-                    return;
-                }
-
-                // Add to liked profiles
-                await addDoc(collection(db, 'users', currentUser.uid, 'liked'), {
-                    userId: profileIdToLike,
-                    timestamp: serverTimestamp(),
-                    likedAt: new Date().toISOString()
-                });
-                
-                // Increment like count for the profile
-                const profileRef = doc(db, 'users', profileIdToLike);
-                const profileSnap = await getDoc(profileRef);
-                
-                if (profileSnap.exists()) {
-                    const currentLikes = profileSnap.data().likes || 0;
-                    await updateDoc(profileRef, {
-                        likes: currentLikes + 1,
-                        updatedAt: serverTimestamp()
-                    });
-                    
-                    // Update the displayed like count immediately
-                    const likeCountElement = document.getElementById('viewLikeCount');
-                    if (likeCountElement) {
-                        likeCountElement.textContent = currentLikes + 1;
-                    }
-                }
-                
-                // Update button state
-                likeProfileBtn.innerHTML = '<i class="fas fa-heart"></i> Liked';
-                likeProfileBtn.classList.add('liked');
-                likeProfileBtn.disabled = true;
-                
-                showNotification('Profile liked successfully!', 'success');
-                
-            } catch (error) {
-                logError(error, 'liking profile from profile page');
-                showNotification('Error liking profile. Please try again.', 'error');
-            }
+            await handleLikeProfile(likeProfileBtn);
         });
+    } else {
+        console.error('Like profile button not found');
     }
 
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
+        eventManager.addListener(logoutBtn, 'click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleLogout();
+        });
     }
 
     if (dashboardBtn) {
-        dashboardBtn.addEventListener('click', () => {
+        eventManager.addListener(dashboardBtn, 'click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             window.location.href = 'dashboard.html';
         });
+    }
+}
+
+// Handle like profile function
+async function handleLikeProfile(likeButton) {
+    // Use the stored profileId
+    const profileIdToLike = window.currentProfileId;
+    
+    if (!profileIdToLike) {
+        showNotification('Cannot like this profile', 'error');
+        return;
+    }
+
+    if (!currentUser) {
+        showNotification('Please log in to like profiles', 'error');
+        return;
+    }
+
+    try {
+        // Check if already liked to prevent duplicate likes
+        const likedRef = collection(db, 'users', currentUser.uid, 'liked');
+        const likedQuery = query(likedRef, where('userId', '==', profileIdToLike));
+        const likedSnap = await getDocs(likedQuery);
+        
+        if (!likedSnap.empty) {
+            showNotification('You already liked this profile!', 'info');
+            return;
+        }
+
+        // Add to liked profiles
+        await addDoc(collection(db, 'users', currentUser.uid, 'liked'), {
+            userId: profileIdToLike,
+            timestamp: serverTimestamp(),
+            likedAt: new Date().toISOString()
+        });
+        
+        // Increment like count for the profile
+        const profileRef = doc(db, 'users', profileIdToLike);
+        const profileSnap = await getDoc(profileRef);
+        
+        if (profileSnap.exists()) {
+            const currentLikes = profileSnap.data().likes || 0;
+            await updateDoc(profileRef, {
+                likes: currentLikes + 1,
+                updatedAt: serverTimestamp()
+            });
+            
+            // Update the displayed like count immediately
+            const likeCountElement = document.getElementById('viewLikeCount');
+            if (likeCountElement) {
+                likeCountElement.textContent = currentLikes + 1;
+            }
+        }
+        
+        // Update button state
+        likeButton.innerHTML = '<i class="fas fa-heart"></i> Liked';
+        likeButton.classList.add('liked');
+        likeButton.disabled = true;
+        
+        showNotification('Profile liked successfully!', 'success');
+        
+    } catch (error) {
+        logError(error, 'liking profile from profile page');
+        showNotification('Error liking profile. Please try again.', 'error');
     }
 }
 
@@ -3961,7 +4037,7 @@ function initAccountPage() {
 
     // Initialize menu tabs
     accountMenuItems.forEach(item => {
-        item.addEventListener('click', () => {
+        eventManager.addListener(item, 'click', () => {
             accountMenuItems.forEach(i => i.classList.remove('active'));
             item.classList.add('active');
             
@@ -3975,7 +4051,7 @@ function initAccountPage() {
 
     // Profile image upload
     if (profileImageUpload) {
-        profileImageUpload.addEventListener('change', async (e) => {
+        eventManager.addListener(profileImageUpload, 'change', async (e) => {
             const file = e.target.files[0];
             if (file) {
                 try {
@@ -4019,7 +4095,7 @@ function initAccountPage() {
     }
 
     if (removeProfileImage) {
-        removeProfileImage.addEventListener('click', async () => {
+        eventManager.addListener(removeProfileImage, 'click', async () => {
             try {
                 // Remove profile image in Firestore
                 await updateDoc(doc(db, 'users', currentUser.uid), {
@@ -4038,7 +4114,7 @@ function initAccountPage() {
 
     // Add interest
     if (addInterestBtn) {
-        addInterestBtn.addEventListener('click', () => {
+        eventManager.addListener(addInterestBtn, 'click', () => {
             const interestInput = document.getElementById('accountInterests');
             const interest = interestInput.value.trim();
             
@@ -4071,7 +4147,7 @@ function initAccountPage() {
 
     // Profile form submission
     if (profileForm) {
-        profileForm.addEventListener('submit', async (e) => {
+        eventManager.addListener(profileForm, 'submit', async (e) => {
             e.preventDefault();
             
             const name = document.getElementById('accountName').value;
@@ -4109,7 +4185,7 @@ function initAccountPage() {
 
     // Settings form submission
     if (settingsForm) {
-        settingsForm.addEventListener('submit', async (e) => {
+        eventManager.addListener(settingsForm, 'submit', async (e) => {
             e.preventDefault();
             
             const currentPassword = document.getElementById('currentPassword').value;
@@ -4143,7 +4219,7 @@ function initAccountPage() {
 
     // Privacy form submission
     if (privacyForm) {
-        privacyForm.addEventListener('submit', async (e) => {
+        eventManager.addListener(privacyForm, 'submit', async (e) => {
             e.preventDefault();
             
             const showAge = document.getElementById('showAge').checked;
@@ -4169,11 +4245,11 @@ function initAccountPage() {
     }
 
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
+        eventManager.addListener(logoutBtn, 'click', handleLogout);
     }
 
     if (dashboardBtn) {
-        dashboardBtn.addEventListener('click', () => {
+        eventManager.addListener(dashboardBtn, 'click', () => {
             window.location.href = 'dashboard.html';
         });
     }
@@ -4238,7 +4314,7 @@ function initChatPage() {
     }
 
     if (backToMessages) {
-        backToMessages.addEventListener('click', () => {
+        eventManager.addListener(backToMessages, 'click', () => {
             // Clean up before leaving
             cleanupChatPage();
             window.location.href = 'messages.html';
@@ -4277,11 +4353,11 @@ function initChatPage() {
     }
 
     if (sendMessageBtn) {
-        sendMessageBtn.addEventListener('click', sendMessage);
+        eventManager.addListener(sendMessageBtn, 'click', sendMessage);
     }
 
     if (messageInput) {
-        messageInput.addEventListener('keypress', (e) => {
+        eventManager.addListener(messageInput, 'keypress', (e) => {
             if (e.key === 'Enter') {
                 sendMessage();
             }
@@ -4290,7 +4366,7 @@ function initChatPage() {
 
     // Typing indicator
     if (messageInput) {
-        messageInput.addEventListener('input', () => {
+        eventManager.addListener(messageInput, 'input', () => {
             updateTypingStatus(true);
             
             // Reset after 2 seconds of no typing
@@ -4303,7 +4379,7 @@ function initChatPage() {
 
     // File attachment
     if (attachmentBtn) {
-        attachmentBtn.addEventListener('click', () => {
+        eventManager.addListener(attachmentBtn, 'click', () => {
             // Create a file input for images and videos
             const fileInput = document.createElement('input');
             fileInput.type = 'file';
@@ -4351,7 +4427,7 @@ function initChatPage() {
 
     // Voice note functionality
     if (voiceNoteBtn) {
-        voiceNoteBtn.addEventListener('mousedown', async () => {
+        eventManager.addListener(voiceNoteBtn, 'mousedown', async () => {
             const hasPermission = await requestMicrophonePermission();
             if (hasPermission) {
                 startRecording();
@@ -4362,16 +4438,16 @@ function initChatPage() {
     }
 
     if (cancelVoiceNoteBtn) {
-        cancelVoiceNoteBtn.addEventListener('click', cancelRecording);
+        eventManager.addListener(cancelVoiceNoteBtn, 'click', cancelRecording);
     }
 
     if (sendVoiceNoteBtn) {
-        sendVoiceNoteBtn.addEventListener('click', sendVoiceNote);
+        eventManager.addListener(sendVoiceNoteBtn, 'click', sendVoiceNote);
     }
 
     // Video note functionality
     if (videoNoteBtn) {
-        videoNoteBtn.addEventListener('click', async () => {
+        eventManager.addListener(videoNoteBtn, 'click', async () => {
             const hasPermission = await requestCameraPermission();
             if (hasPermission) {
                 startVideoRecording();
@@ -4382,19 +4458,19 @@ function initChatPage() {
     }
 
     if (cancelVideoRecordingBtn) {
-        cancelVideoRecordingBtn.addEventListener('click', cancelVideoRecording);
+        eventManager.addListener(cancelVideoRecordingBtn, 'click', cancelVideoRecording);
     }
 
     if (cancelReplyBtn) {
-        cancelReplyBtn.addEventListener('click', cancelReply);
+        eventManager.addListener(cancelReplyBtn, 'click', cancelReply);
     }
 
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
+        eventManager.addListener(logoutBtn, 'click', handleLogout);
     }
 
     if (dashboardBtn) {
-        dashboardBtn.addEventListener('click', () => {
+        eventManager.addListener(dashboardBtn, 'click', () => {
             window.location.href = 'dashboard.html';
         });
     }
@@ -4422,7 +4498,7 @@ function initMessagesPage() {
     loadMessageThreads();
 
     if (messageSearch) {
-        messageSearch.addEventListener('input', (e) => {
+        eventManager.addListener(messageSearch, 'input', (e) => {
             const searchTerm = e.target.value.toLowerCase();
             const messageCards = document.querySelectorAll('.message-card');
             
@@ -4440,11 +4516,11 @@ function initMessagesPage() {
     }
 
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
+        eventManager.addListener(logoutBtn, 'click', handleLogout);
     }
 
     if (dashboardBtn) {
-        dashboardBtn.addEventListener('click', () => {
+        eventManager.addListener(dashboardBtn, 'click', () => {
             window.location.href = 'dashboard.html';
         });
     }
@@ -4972,6 +5048,9 @@ window.addEventListener('beforeunload', () => {
             globalMessageListener();
             globalMessageListener = null;
         }
+        
+        // Clear all event listeners
+        eventManager.clearAll();
         
         // Set user as offline when leaving - ONLY if user exists and is authenticated
         if (currentUser && currentUser.uid && auth.currentUser) {
