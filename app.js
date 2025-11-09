@@ -1535,7 +1535,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Hide auth pages if user is logged in
                 if (['login', 'signup', 'index'].includes(currentPage)) {
-                    window.location.href = 'dashboard.html';
+                    window.location.href = 'mingle.html';
                 }
             }).catch(error => {
                 logError(error, 'ensuring user document');
@@ -3371,7 +3371,7 @@ function initLoginPage() {
                 
                 showNotification('Login successful! Redirecting...', 'success');
                 setTimeout(() => {
-                    window.location.href = 'dashboard.html';
+                    window.location.href = 'mingle.html';
                 }, 1500);
                 
             } catch (error) {
@@ -3443,7 +3443,7 @@ function initSignupPage() {
                 
                 showNotification('Account created successfully! Redirecting...', 'success');
                 setTimeout(() => {
-                    window.location.href = 'dashboard.html';
+                    window.location.href = 'account.html';
                 }, 1500);
                 
             } catch (error) {
