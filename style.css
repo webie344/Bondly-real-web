@@ -30,6 +30,211 @@
     padding: 0;
     box-sizing: border-box;
 }
+/* ===== FIX FOR VIDEO MESSAGE BACKGROUNDS ===== */
+
+/* Remove background from ALL message containers that contain videos */
+.message:has(.video-message),
+.message:has(.video-message) .message-content,
+.message:has(.video-message) > div {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+}
+
+/* Video message container - override ALL parent backgrounds */
+.video-message,
+.message .video-message,
+.message-sent .video-message,
+.message-received .video-message {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 8px 0 !important;
+    display: block !important;
+    position: relative !important;
+    max-width: 280px !important;
+    min-width: 200px !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+}
+
+/* Video element - force black/transparent background */
+.video-message video {
+    background: #000 !important;
+    background-color: #000 !important;
+    border-radius: 16px !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: 300px !important;
+    object-fit: contain !important;
+    display: block !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+    -webkit-background-clip: padding-box !important;
+    background-clip: padding-box !important;
+}
+
+/* Remove any pseudo-element backgrounds */
+.video-message::before,
+.video-message::after,
+.message:has(.video-message)::before,
+.message:has(.video-message)::after {
+    background: transparent !important;
+    content: none !important;
+}
+
+/* Sent video messages - additional overrides */
+.message-sent .video-message {
+    margin-left: auto !important;
+    margin-right: 0 !important;
+    background: transparent !important;
+}
+
+/* Received video messages - additional overrides */
+.message-received .video-message {
+    margin-right: auto !important;
+    margin-left: 0 !important;
+    background: transparent !important;
+}
+
+/* Remove ALL background inheritance from parent containers */
+.chat-messages .message:has(.video-message),
+#chatMessages .message:has(.video-message),
+.messages-list .message:has(.video-message) {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* Force remove background colors from any element inside video messages */
+.video-message * {
+    background: transparent !important;
+}
+
+/* Video controls - clean overlay */
+.video-message-controls {
+    position: absolute !important;
+    bottom: 10px !important;
+    right: 10px !important;
+    background: rgba(0, 0, 0, 0.7) !important;
+    backdrop-filter: blur(5px) !important;
+    border-radius: 20px !important;
+    padding: 5px 10px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 5px !important;
+    z-index: 2 !important;
+    border: none !important;
+}
+
+/* Remove any text/content backgrounds */
+.video-message + .message-time,
+.video-message + .message-meta {
+    background: rgba(0, 0, 0, 0.7) !important;
+    backdrop-filter: blur(10px) !important;
+    border: none !important;
+    border-radius: 20px !important;
+    padding: 4px 10px !important;
+    margin-top: -35px !important;
+    margin-left: 10px !important;
+    margin-bottom: 10px !important;
+    color: white !important;
+    font-size: 0.75rem !important;
+    display: inline-block !important;
+    position: relative !important;
+    z-index: 2 !important;
+}
+
+/* Sent message timestamp */
+.message-sent .video-message + .message-time {
+    background: rgba(179, 0, 75, 0.8) !important;
+    margin-left: auto !important;
+    margin-right: 10px !important;
+}
+
+/* Hover state */
+.video-message:hover video {
+    transform: scale(1.01) !important;
+    transition: transform 0.3s ease !important;
+}
+
+/* Remove any gradient or image backgrounds */
+.message:has(.video-message) {
+    background-image: none !important;
+    background: transparent !important;
+}
+
+/* ===== NUCLEAR OPTION - If above doesn't work ===== */
+/* Add this if video backgrounds still appear */
+
+/* Target the specific HTML structure from your app.js */
+.message[data-message-id] .video-message,
+.message[data-message-id*="video"] .video-message {
+    background: #000 !important; /* Force black background */
+    isolation: isolate !important; /* Create new stacking context */
+    position: relative !important;
+    z-index: 1 !important;
+}
+
+/* Force remove all inherited backgrounds with more specificity */
+#chatMessages > .message > .video-message,
+.chat-messages > .message > .video-message,
+div.message > div.video-message {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+/* If there's a wrapper div around video */
+.message > div > .video-message,
+.message > .video-message {
+    all: unset !important; /* Reset all properties */
+    display: block !important;
+    background: #000 !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    margin: 8px 0 !important;
+    max-width: 280px !important;
+    min-width: 200px !important;
+    position: relative !important;
+}
+
+/* Force video element background */
+.message .video-message video {
+    all: unset !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: 400px !important;
+    background: #000 !important;
+    border-radius: 12px !important;
+    object-fit: contain !important;
+}
+
+/* DEBUG: Add outline to see what's being targeted */
+.video-message {
+    outline: 2px solid red !important; /* Remove this after debugging */
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .video-message,
+    .message .video-message {
+        max-width: 240px !important;
+        min-width: 180px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .video-message,
+    .message .video-message {
+        max-width: 200px !important;
+        min-width: 160px !important;
+    }
+}
 /* ===== VIDEO MESSAGE SPECIFIC STYLES ===== */
 
 /* Video message container - remove background, borders, and bubble styling */
