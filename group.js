@@ -1,4 +1,4 @@
-// group.js - Complete Group Chat System with Cloudinary Image Support and Fixed Issues
+// group.js - Complete Group Chat System with Cloudinary Image Support - REPLY ONLY VERSION
 
 import { 
     getFirestore, 
@@ -84,14 +84,12 @@ class GroupChat {
         this.longPressTimer = null;
         this.selectedMessage = null;
         this.messageContextMenu = null;
-        this.isModalInitialized = false;
         
         // Track if listeners are already set up
         this.areListenersSetup = false;
         
         this.setupAuthListener();
         this.createMessageContextMenu();
-        // Don't create modal here, it will be created when needed
     }
 
     // ==================== NEW ADMIN FUNCTIONS ====================
@@ -1071,272 +1069,9 @@ class GroupChat {
         }
     }
 
-    // ==================== DELETE MODAL FUNCTIONALITY ====================
+    // ==================== REPLY FUNCTIONALITY ONLY ====================
 
-    // Initialize delete modal (called when needed)
-    initializeDeleteModal() {
-        if (this.isModalInitialized) return;
-        
-        // Check if modal already exists
-        let modal = document.getElementById('deleteMessageModal');
-        if (!modal) {
-            // Create modal HTML
-            const modalHTML = `
-                <div id="deleteMessageModal" class="delete-modal" style="display: none;">
-                    <div class="modal-overlay" id="modalOverlay"></div>
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h3>Delete Message</h3>
-                            <button class="modal-close" id="modalCloseBtn">&times;</button>
-                        </div>
-                        <div class="modal-body">
-                            <p id="deleteModalMessage">Are you sure you want to delete this message?</p>
-                            <p class="modal-warning">This action cannot be undone.</p>
-                        </div>
-                        <div class="modal-footer">
-                            <button class="modal-btn cancel-btn" id="modalCancelBtn">Cancel</button>
-                            <button class="modal-btn delete-btn" id="modalDeleteBtn">Delete</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-            
-            // Add modal to body
-            const modalContainer = document.createElement('div');
-            modalContainer.innerHTML = modalHTML;
-            document.body.appendChild(modalContainer);
-            
-            // Get modal elements
-            modal = document.getElementById('deleteMessageModal');
-        }
-        
-        // Get all modal elements
-        const modalOverlay = document.getElementById('modalOverlay');
-        const modalCloseBtn = document.getElementById('modalCloseBtn');
-        const modalCancelBtn = document.getElementById('modalCancelBtn');
-        const modalDeleteBtn = document.getElementById('modalDeleteBtn');
-        
-        // Add event listeners
-        if (modalOverlay) {
-            modalOverlay.addEventListener('click', () => this.hideDeleteModal());
-        }
-        
-        if (modalCloseBtn) {
-            modalCloseBtn.addEventListener('click', () => this.hideDeleteModal());
-        }
-        
-        if (modalCancelBtn) {
-            modalCancelBtn.addEventListener('click', () => this.hideDeleteModal());
-        }
-        
-        if (modalDeleteBtn) {
-            modalDeleteBtn.addEventListener('click', () => this.confirmDeleteMessage());
-        }
-        
-        this.isModalInitialized = true;
-    }
-
-    // Show delete modal
-    showDeleteModal(message) {
-        // Initialize modal if not already done
-        this.initializeDeleteModal();
-        
-        this.selectedMessage = message;
-        
-        // Update modal message
-        const deleteModalMessage = document.getElementById('deleteModalMessage');
-        if (deleteModalMessage) {
-            deleteModalMessage.textContent = 'Are you sure you want to delete this message?';
-        }
-        
-        // Show modal
-        const modal = document.getElementById('deleteMessageModal');
-        if (modal) {
-            modal.style.display = 'flex';
-            document.body.classList.add('modal-open');
-            
-            // Enable delete button
-            const deleteBtn = document.getElementById('modalDeleteBtn');
-            if (deleteBtn) {
-                deleteBtn.disabled = false;
-                deleteBtn.textContent = 'Delete';
-            }
-        }
-    }
-
-    // Hide delete modal
-    hideDeleteModal() {
-        const modal = document.getElementById('deleteMessageModal');
-        if (modal) {
-            modal.style.display = 'none';
-            document.body.classList.remove('modal-open');
-        }
-        this.selectedMessage = null;
-    }
-
-    // Confirm and delete message
-    async confirmDeleteMessage() {
-        if (!this.selectedMessage || !this.currentGroupId) {
-            console.error('No message selected or no group ID');
-            this.hideDeleteModal();
-            return;
-        }
-        
-        const deleteBtn = document.getElementById('modalDeleteBtn');
-        if (!deleteBtn) return;
-        
-        const originalText = deleteBtn.textContent;
-        
-        try {
-            // Check if user owns the message
-            if (this.selectedMessage.senderId !== this.firebaseUser?.uid) {
-                alert('You can only delete your own messages.');
-                this.hideDeleteModal();
-                return;
-            }
-            
-            // Disable delete button and show loading
-            deleteBtn.disabled = true;
-            deleteBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
-            
-            console.log('Deleting message:', this.selectedMessage.id, 'from group:', this.currentGroupId);
-            
-            // Delete from Firestore
-            const messageRef = doc(db, 'groups', this.currentGroupId, 'messages', this.selectedMessage.id);
-            await deleteDoc(messageRef);
-            
-            console.log('Message deleted successfully');
-            
-            // Hide modal
-            this.hideDeleteModal();
-            
-            // Show success message
-            this.showNotification('Message deleted successfully', 'success');
-            
-        } catch (error) {
-            console.error('Error deleting message:', error);
-            
-            // Show error
-            this.showNotification('Failed to delete message: ' + error.message, 'error');
-            
-            // Reset button
-            deleteBtn.disabled = false;
-            deleteBtn.textContent = originalText;
-        }
-    }
-
-    // Show notification
-    showNotification(message, type = 'info') {
-        // Remove existing notifications
-        const existingNotifications = document.querySelectorAll('.notification');
-        existingNotifications.forEach(n => n.remove());
-        
-        const notification = document.createElement('div');
-        notification.className = `notification notification-${type}`;
-        notification.innerHTML = `
-            <div class="notification-icon">
-                <i class="fas ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
-            </div>
-            <div class="notification-content">
-                <div class="notification-message">${message}</div>
-            </div>
-        `;
-        
-        document.body.appendChild(notification);
-        
-        // Add notification styles if not already added
-        if (!document.getElementById('notification-styles')) {
-            const notificationStyles = document.createElement('style');
-            notificationStyles.id = 'notification-styles';
-            notificationStyles.textContent = `
-                .notification {
-                    position: fixed;
-                    top: 20px;
-                    right: 20px;
-                    background: white;
-                    border-radius: 8px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                    padding: 12px 16px;
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                    z-index: 10000;
-                    animation: slideIn 0.3s ease;
-                    max-width: 300px;
-                }
-                
-                .notification-success {
-                    border-left: 4px solid #2ed573;
-                }
-                
-                .notification-error {
-                    border-left: 4px solid #ff4757;
-                }
-                
-                .notification-info {
-                    border-left: 4px solid #3498db;
-                }
-                
-                .notification-icon {
-                    font-size: 20px;
-                }
-                
-                .notification-success .notification-icon {
-                    color: #2ed573;
-                }
-                
-                .notification-error .notification-icon {
-                    color: #ff4757;
-                }
-                
-                .notification-info .notification-icon {
-                    color: #3498db;
-                }
-                
-                .notification-content {
-                    flex: 1;
-                }
-                
-                .notification-message {
-                    font-size: 14px;
-                    color: #333;
-                }
-                
-                @keyframes slideIn {
-                    from {
-                        transform: translateX(100%);
-                        opacity: 0;
-                    }
-                    to {
-                        transform: translateX(0);
-                        opacity: 1;
-                    }
-                }
-                
-                @keyframes slideOut {
-                    from {
-                        transform: translateX(0);
-                        opacity: 1;
-                    }
-                    to {
-                        transform: translateX(100%);
-                        opacity: 0;
-                    }
-                }
-            `;
-            document.head.appendChild(notificationStyles);
-        }
-        
-        // Auto remove after 3 seconds
-        setTimeout(() => {
-            notification.style.animation = 'slideOut 0.3s ease';
-            setTimeout(() => notification.remove(), 300);
-        }, 3000);
-    }
-
-    // ==================== REPLY FUNCTIONALITY ====================
-
-    // Create message context menu
+    // Create message context menu (REPLY ONLY)
     createMessageContextMenu() {
         // Remove existing context menu if any
         const existingMenu = document.getElementById('messageContextMenu');
@@ -1344,7 +1079,7 @@ class GroupChat {
             existingMenu.remove();
         }
         
-        // Create new context menu
+        // Create new context menu with ONLY REPLY OPTION
         this.messageContextMenu = document.createElement('div');
         this.messageContextMenu.id = 'messageContextMenu';
         this.messageContextMenu.className = 'message-context-menu';
@@ -1352,10 +1087,6 @@ class GroupChat {
             <div class="menu-item" id="replyMenuItem">
                 <i class="fas fa-reply"></i>
                 <span>Reply</span>
-            </div>
-            <div class="menu-item" id="deleteMenuItem">
-                <i class="fas fa-trash"></i>
-                <span>Delete</span>
             </div>
         `;
         
@@ -1370,7 +1101,7 @@ class GroupChat {
                 box-shadow: 0 2px 10px rgba(0,0,0,0.2);
                 z-index: 9998;
                 display: none;
-                min-width: 150px;
+                min-width: 120px;
                 overflow: hidden;
             }
             
@@ -1381,11 +1112,6 @@ class GroupChat {
                 gap: 10px;
                 cursor: pointer;
                 transition: background 0.2s;
-                border-bottom: 1px solid #f5f5f5;
-            }
-            
-            .menu-item:last-child {
-                border-bottom: none;
             }
             
             .menu-item:hover {
@@ -1396,14 +1122,6 @@ class GroupChat {
                 width: 20px;
                 color: #666;
             }
-            
-            #deleteMenuItem {
-                color: #ff4757;
-            }
-            
-            #deleteMenuItem i {
-                color: #ff4757;
-            }
         `;
         
         document.head.appendChild(contextMenuStyles);
@@ -1412,11 +1130,6 @@ class GroupChat {
         // Add event listeners
         document.getElementById('replyMenuItem').addEventListener('click', () => {
             this.handleReply();
-            this.hideContextMenu();
-        });
-        
-        document.getElementById('deleteMenuItem').addEventListener('click', () => {
-            this.handleDelete();
             this.hideContextMenu();
         });
         
@@ -1436,16 +1149,6 @@ class GroupChat {
     // Show context menu
     showContextMenu(x, y, message) {
         this.selectedMessage = message;
-        
-        // Check if user owns the message - only show delete for own messages
-        const deleteMenuItem = document.getElementById('deleteMenuItem');
-        if (deleteMenuItem) {
-            if (message.senderId === this.firebaseUser?.uid) {
-                deleteMenuItem.style.display = 'flex';
-            } else {
-                deleteMenuItem.style.display = 'none';
-            }
-        }
         
         // Position the menu
         this.messageContextMenu.style.left = x + 'px';
@@ -1486,14 +1189,21 @@ class GroupChat {
         }
     }
 
-    // Truncate name to 4 letters
+    // Truncate name to 6 letters for better readability
     truncateName(name) {
         if (!name) return '';
-        if (name.length <= 4) return name;
-        return name.substring(0, 4) + '...';
+        if (name.length <= 6) return name;
+        return name.substring(0, 6) + '...';
     }
 
-    // Show reply indicator with truncated name
+    // Truncate message text for reply preview (short version)
+    truncateMessage(text) {
+        if (!text) return '';
+        if (text.length <= 25) return text;
+        return text.substring(0, 25) + '...';
+    }
+
+    // Show reply indicator with truncated name and message
     showReplyIndicator() {
         // Remove existing indicator
         this.removeReplyIndicator();
@@ -1507,19 +1217,19 @@ class GroupChat {
         indicator.className = 'reply-indicator';
         indicator.id = 'replyIndicator';
         
-        // Truncate sender name to 4 letters
+        // Truncate sender name to 6 letters
         const truncatedName = this.truncateName(this.replyingToMessage.senderName);
+        // Truncate message text to 25 characters (short)
+        const truncatedMessage = this.replyingToMessage.text ? 
+            this.truncateMessage(this.replyingToMessage.text) : 
+            '📷 Image';
         
         indicator.innerHTML = `
             <div class="reply-indicator-content">
-                <span style="color: #666;">Replying to</span> 
+                <span class="reply-label">Replying to</span> 
                 <span class="reply-sender">${truncatedName}</span>
-                <span style="color: #666;">:</span> 
-                ${this.replyingToMessage.text ? 
-                    (this.replyingToMessage.text.length > 40 ? 
-                        this.replyingToMessage.text.substring(0, 40) + '...' : 
-                        this.replyingToMessage.text) : 
-                    '📷 Image'}
+                <span class="reply-separator">:</span> 
+                <span class="reply-message">${truncatedMessage}</span>
             </div>
             <button class="cancel-reply" id="cancelReply">
                 <i class="fas fa-times"></i>
@@ -1532,6 +1242,81 @@ class GroupChat {
         document.getElementById('cancelReply').addEventListener('click', () => {
             this.clearReply();
         });
+        
+        // Add compact styles
+        const indicatorStyles = document.createElement('style');
+        indicatorStyles.id = 'reply-indicator-styles';
+        indicatorStyles.textContent = `
+            .reply-indicator {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 8px 12px;
+                border-radius: 8px;
+                margin-bottom: 8px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                font-size: 13px;
+                max-width: 100%;
+                overflow: hidden;
+            }
+            
+            .reply-indicator-content {
+                display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 4px;
+                flex: 1;
+                overflow: hidden;
+                white-space: nowrap;
+                text-overflow: ellipsis;
+            }
+            
+            .reply-label {
+                opacity: 0.9;
+                font-weight: 500;
+            }
+            
+            .reply-sender {
+                font-weight: 600;
+                color: #ffdd59;
+            }
+            
+            .reply-separator {
+                opacity: 0.9;
+            }
+            
+            .reply-message {
+                opacity: 0.9;
+                flex: 1;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            
+            .cancel-reply {
+                background: rgba(255, 255, 255, 0.2);
+                border: none;
+                color: white;
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                margin-left: 8px;
+                flex-shrink: 0;
+            }
+            
+            .cancel-reply:hover {
+                background: rgba(255, 255, 255, 0.3);
+            }
+        `;
+        
+        if (!document.getElementById('reply-indicator-styles')) {
+            document.head.appendChild(indicatorStyles);
+        }
     }
 
     // Remove reply indicator
@@ -1546,14 +1331,6 @@ class GroupChat {
     clearReply() {
         this.replyingToMessage = null;
         this.removeReplyIndicator();
-    }
-
-    // Handle delete action
-    handleDelete() {
-        if (!this.selectedMessage) return;
-        
-        // Show delete modal instead of alert
-        this.showDeleteModal(this.selectedMessage);
     }
 
     // Setup long press detection for messages
@@ -1597,7 +1374,7 @@ class GroupChat {
                     }
                     
                     if (messageElement && messageElement !== messagesContainer) {
-                        // Find message ID
+                        // Find message ID from data attribute
                         const messageId = this.findMessageIdFromElement(messageElement);
                         if (messageId) {
                             // Find message data
@@ -1663,7 +1440,7 @@ class GroupChat {
         // Look for data-message-id attribute
         let current = element;
         while (current && current !== document.body) {
-            if (current.dataset?.messageId) {
+            if (current.dataset && current.dataset.messageId) {
                 return current.dataset.messageId;
             }
             current = current.parentElement;
@@ -2010,6 +1787,12 @@ function initGroupsPage() {
         filterGroups(searchTerm);
     });
     
+    // Generate group avatar from group name
+    function generateGroupAvatar(groupName) {
+        const seed = encodeURIComponent(groupName);
+        return `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}&backgroundColor=00897b,00acc1,039be5,1e88e5,3949ab,43a047,5e35b1,7cb342,8e24aa,c0ca33,d81b60,e53935,f4511e,fb8c00,fdd835,ffb300,ffd5dc,ffdfbf,c0aede,d1d4f9,b6e3f4&backgroundType=gradientLinear`;
+    }
+    
     // Load groups function
     async function loadGroups() {
         try {
@@ -2021,7 +1804,7 @@ function initGroupsPage() {
         }
     }
     
-    // Display groups
+    // Display groups with avatars
     function displayGroups(groups) {
         if (groups.length === 0) {
             groupsGrid.innerHTML = `
@@ -2037,13 +1820,19 @@ function initGroupsPage() {
         
         groups.forEach(group => {
             const isJoined = groupChat.hasJoinedGroup(group.id);
+            const groupAvatar = generateGroupAvatar(group.name);
             
             const groupCard = document.createElement('div');
             groupCard.className = 'group-card';
             groupCard.innerHTML = `
                 <div class="group-header">
-                    <h3 class="group-name">${group.name}</h3>
-                    <span class="group-category">${group.category || 'General'}</span>
+                    <div class="group-avatar-section">
+                        <img src="${groupAvatar}" alt="${group.name}" class="group-avatar">
+                        <div class="group-title-section">
+                            <h3 class="group-name">${group.name}</h3>
+                            <span class="group-category">${group.category || 'General'}</span>
+                        </div>
+                    </div>
                     <p class="group-description">${group.description}</p>
                     <div class="group-meta">
                         <span class="group-members">
@@ -2330,7 +2119,7 @@ function initSetPage() {
     }
 }
 
-// Initialize Group Chat Page with Image Support and Reply Functionality - FIXED DUPLICATE MESSAGES
+// Initialize Group Chat Page with Image Support and Reply Functionality ONLY
 function initGroupPage() {
     const sidebar = document.getElementById('sidebar');
     const backBtn = document.getElementById('backBtn');
@@ -2372,9 +2161,9 @@ function initGroupPage() {
     
     // Store current group ID for temporary messages
     window.currentGroupId = groupId;
-    groupChat.currentGroupId = groupId; // Set current group ID for message deletion
+    groupChat.currentGroupId = groupId; // Set current group ID
     
-    // Check if user needs profile setup - FIXED: Check localStorage flag first
+    // Check if user needs profile setup
     if (groupChat.needsProfileSetup() && !groupChat.isProfileSetupInStorage()) {
         window.location.href = `set.html?id=${groupId}`;
         return;
@@ -2524,8 +2313,11 @@ function initGroupPage() {
                 return;
             }
             
+            // Generate group avatar
+            const groupAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(groupData.name)}&backgroundColor=00897b&backgroundType=gradientLinear`;
+            
             // Update UI with group info
-            groupAvatar.src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(groupData.name)}`;
+            groupAvatar.src = groupAvatarUrl;
             groupNameSidebar.textContent = groupData.name;
             groupMembersCount.textContent = `${groupData.memberCount || 0} members`;
             chatTitle.textContent = groupData.name;
@@ -2557,7 +2349,7 @@ function initGroupPage() {
         }
     }
     
-    // Setup real-time listeners - FIXED DUPLICATE LISTENERS
+    // Setup real-time listeners
     function setupListeners() {
         // Don't setup listeners if already set up
         if (groupChat.areListenersSetup) {
@@ -2724,17 +2516,19 @@ function initGroupPage() {
                         if (msg.replyTo) {
                             const repliedMessage = messages.find(m => m.id === msg.replyTo);
                             if (repliedMessage) {
-                                // Truncate sender name to 4 letters
+                                // Truncate sender name to 6 letters
                                 const truncatedName = groupChat.truncateName(repliedMessage.senderName);
+                                // Truncate message text to 25 characters (short)
+                                const truncatedMessage = repliedMessage.text ? 
+                                    groupChat.truncateMessage(repliedMessage.text) : 
+                                    '📷 Image';
                                 
                                 replyHtml = `
                                     <div class="replying-to">
-                                        <span style="color: #666;">Replying to</span> 
+                                        <span class="reply-label">Replying to</span> 
                                         <span class="reply-sender">${truncatedName}</span>
-                                        <span style="color: #666;">:</span> 
-                                        ${repliedMessage.text ? (repliedMessage.text.length > 40 ? 
-                                            repliedMessage.text.substring(0, 40) + '...' : 
-                                            repliedMessage.text) : '📷 Image'}
+                                        <span class="reply-separator">:</span> 
+                                        <span class="reply-message">${truncatedMessage}</span>
                                     </div>
                                 `;
                             }
@@ -2744,10 +2538,13 @@ function initGroupPage() {
                         const isTemp = tempMessages.has(msg.id);
                         const isUploading = msg.status === 'uploading';
                         
+                        // Set data-message-id attribute for long-press detection
+                        const messageDivClass = msg.type === 'system' ? 'system-message' : 'message-text';
+                        
                         if (msg.imageUrl) {
                             // Image message
                             return `
-                                <div class="message-text" data-message-id="${msg.id}">
+                                <div class="${messageDivClass}" data-message-id="${msg.id}">
                                     ${replyHtml}
                                     <div class="message-image-container" style="position: relative;">
                                         <img src="${msg.imageUrl}" 
@@ -2769,7 +2566,7 @@ function initGroupPage() {
                         } else if (msg.type === 'system') {
                             // System message
                             return `
-                                <div class="message-text system-message" data-message-id="${msg.id}">
+                                <div class="${messageDivClass}" data-message-id="${msg.id}">
                                     <div style="font-style: italic; color: #666; text-align: center; padding: 4px 0;">
                                         ${msg.text}
                                     </div>
@@ -2778,7 +2575,7 @@ function initGroupPage() {
                         } else {
                             // Text message
                             return `
-                                <div class="message-text" data-message-id="${msg.id}">
+                                <div class="${messageDivClass}" data-message-id="${msg.id}">
                                     ${replyHtml}
                                     ${msg.text || ''}
                                     ${isTemp ? '<div style="font-size: 11px; color: #999; margin-top: 4px;">Sending...</div>' : ''}
@@ -2792,7 +2589,7 @@ function initGroupPage() {
             messagesContainer.appendChild(groupDiv);
         });
         
-        // Setup long press detection
+        // Setup long press detection (for reply only)
         groupChat.setupMessageLongPress(messagesContainer);
         
         // Scroll to bottom
@@ -2994,6 +2791,12 @@ function initAdminGroupsPage() {
         }
     }
     
+    // Generate group avatar for admin page
+    function generateGroupAvatar(groupName) {
+        const seed = encodeURIComponent(groupName);
+        return `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}&backgroundColor=00897b&backgroundType=gradientLinear`;
+    }
+    
     // Display groups function
     function displayGroups(groups) {
         const groupsList = document.getElementById('groupsList');
@@ -3004,6 +2807,9 @@ function initAdminGroupsPage() {
         groups.forEach(group => {
             const groupCard = document.createElement('div');
             groupCard.className = 'group-card';
+            
+            // Generate group avatar
+            const groupAvatar = generateGroupAvatar(group.name);
             
             // Format date
             const createdAt = group.createdAt ? 
@@ -3016,9 +2822,7 @@ function initAdminGroupsPage() {
             groupCard.innerHTML = `
                 <div class="group-header">
                     <div class="group-info">
-                        <div class="group-avatar">
-                            <i class="fas fa-users"></i>
-                        </div>
+                        <img src="${groupAvatar}" alt="${group.name}" class="group-avatar">
                         <div class="group-details">
                             <h3>${group.name}</h3>
                             <p class="group-description">${group.description || 'No description'}</p>
