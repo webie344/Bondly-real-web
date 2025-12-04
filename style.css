@@ -43,7 +43,71 @@
     margin: 0 !important;
     border-radius: 0 !important;
 }
+/* =========================================== */
+/* REACTION PICKER STYLES - HIDDEN BY DEFAULT */
+/* =========================================== */
 
+/* Hide reaction picker on ALL pages by default */
+#reactionPicker {
+    display: none !important;
+    position: absolute;
+    background: var(--bg-card);
+    border-radius: 24px;
+    padding: 10px 15px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    border: 1px solid var(--border);
+    max-width: 250px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* Reaction emojis styling (only when visible) */
+.reaction-emoji {
+    font-size: 20px;
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+
+.reaction-emoji:hover {
+    background-color: #f0f0f0;
+}
+
+/* Message reactions display */
+.message-reactions {
+    display: flex;
+    gap: 5px;
+    margin-top: 5px;
+    flex-wrap: wrap;
+}
+
+.reaction {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 2px 6px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+}
+
+.reaction-count {
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
+/* =========================================== */
+/* CHAT PAGE OVERRIDES (will be in chat.html) */
+/* =========================================== */
+
+/* 
+NOTE: The bottom sheet styling for chat page should ONLY be in chat.html
+This ensures it only applies to the chat page
+*/
 /* Video message container - override ALL parent backgrounds */
 .video-message,
 .message .video-message,
@@ -1372,7 +1436,7 @@ body.profile-page .profile-view-container {
 
 .online-status {
     color: var(--primary-light);
-    font-size: 0.9rem;
+    font-size: 4px;
     display: flex;
     align-items: center;
     gap: 0.3rem;
