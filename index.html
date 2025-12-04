@@ -1,11 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"> 
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bondly - Find Your Match</title>
+    <title>WhipRoom - Find Your Match</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css">
     <style>
         /* Reset and Base Styles */
         * {
@@ -16,299 +15,161 @@
         }
         
         body {
-            background-color: #fef7f6;
-            color: #333;
+            background-color: #0a0a0a; /* Very dark background */
+            color: #ffffff;
             line-height: 1.6;
-        }
-        
-        /* Hero Section */
-        .hero {
-            background-image: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), 
-                              url('https://images.unsplash.com/photo-1518568814500-bf0f8d125f46?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1770&q=80');
-            background-size: cover;
-            background-position: center;
             min-height: 100vh;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 0 1rem;
-            color: white;
+            flex-direction: column;
         }
         
-        .hero-content {
-            max-width: 800px;
+        /* Main Container */
+        .container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
             padding: 2rem;
+            text-align: center;
         }
 
-        /* Bondly Logo */
-        .bondly-logo {
+        /* Chain Logo */
+        .chain-logo {
             font-size: 4rem;
             font-weight: 700;
-            margin-bottom: 1rem;
-            color: white;
+            margin-bottom: 2rem;
+            color: #ffffff;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 0.75rem;
         }
 
-        .bondly-logo::before {
-            content: "💎";
-            font-size: 3.5rem;
+        .chain-logo::before {
+            content: "⛓️";
+            font-size: 4.5rem;
+            filter: brightness(1.2);
         }
         
-        .hero h1 {
-            font-size: 3.5rem;
-            font-weight: 700;
-            margin-bottom: 1rem;
-            line-height: 1.2;
-        }
-        
-        .hero p {
+        .tagline {
             font-size: 1.5rem;
-            margin-bottom: 2rem;
-            opacity: 0.9;
+            margin-bottom: 3rem;
+            opacity: 0.8;
+            color: #aaaaaa;
         }
         
-        .hero-buttons {
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin-bottom: 2rem;
+        /* Get Started Button */
+        .get-started-container {
+            width: 100%;
+            padding: 2.5rem;
+            background-color: #111;
+            border-top: ;
+            text-align: center;
         }
         
-        .btn-primary, .btn-secondary {
-            padding: 0.8rem 2rem;
+        .btn-get-started {
+            background-color: #ff5555;
+            color: white;
+            border: none;
+            padding: 1.2rem 3.5rem;
             border-radius: 50px;
             text-decoration: none;
             font-weight: 600;
-            font-size: 1rem;
+            font-size: 1.2rem;
             transition: all 0.3s ease;
             display: inline-block;
-        }
-        
-        .btn-primary {
-            background-color: #ff6b6b;
-            color: white;
-            border: 2px solid #ff6b6b;
-        }
-        
-        .btn-primary:hover {
-            background-color: #ff5252;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.3);
-        }
-        
-        .btn-secondary {
-            background-color: transparent;
-            color: white;
-            border: 2px solid white;
-        }
-        
-        .btn-secondary:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-            transform: translateY(-2px);
-        }
-        
-        .terms {
-            margin-top: 5rem;
-            font-size: 20px;
-            opacity: 0.8;
-            max-width: 500px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-        
-        /* Love Stories Section */
-        .love-stories {
-            padding: 4rem 2rem;
-            background-color: #fff;
-            text-align: center;
-        }
-        
-        .section-title {
-            font-size: 2.5rem;
-            margin-bottom: 3rem;
-            color: #333;
-            font-weight: 700;
-        }
-        
-        .stories-container {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 2rem;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        
-        .story-card {
-            background-color: #f9f9f9;
-            border-radius: 10px;
-            overflow: hidden;
-            width: 300px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            transition: transform 0.3s;
-        }
-        
-        .story-card:hover {
-            transform: translateY(-5px);
-        }
-        
-        .story-image {
-            height: 200px;
+            cursor: pointer;
             width: 100%;
-            object-fit: cover;
+            max-width: 350px;
+            letter-spacing: 0.5px;
         }
         
-        .story-content {
-            padding: 1.5rem;
+        .btn-get-started:hover {
+            background-color: #ff3d3d;
+            transform: translateY(-3px);
+            box-shadow: 0 7px 20px rgba(255, 85, 85, 0.25);
         }
         
-        .story-title {
-            font-size: 1.3rem;
-            margin-bottom: 0.5rem;
-            color: #333;
+        .btn-get-started:active {
+            transform: translateY(-1px);
         }
         
-        .story-text {
-            color: #666;
-            margin-bottom: 1rem;
-        }
-        
-        /* Footer */
-        .footer {
-            background-color: #333;
-            color: white;
-            padding: 3rem 2rem;
-            text-align: center;
-        }
-        
-        .footer-content {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        
-        .footer-links {
-            display: flex;
-            justify-content: center;
-            gap: 2rem;
-            margin: 2rem 0;
-            flex-wrap: wrap;
-        }
-        
-        .footer-link {
-            color: #ddd;
-            text-decoration: none;
-            transition: color 0.3s;
-        }
-        
-        .footer-link:hover {
-            color: #ff6b6b;
-        }
-        
-        .copyright {
-            margin-top: 2rem;
-            color: #aaa;
-            font-size: 0.9rem;
+        /* Additional styling for very dark theme */
+        ::selection {
+            background-color: rgba(255, 85, 85, 0.3);
         }
         
         /* Responsive Design */
         @media (max-width: 768px) {
-            .bondly-logo {
+            .chain-logo {
+                font-size: 3.2rem;
+            }
+
+            .chain-logo::before {
+                font-size: 3.5rem;
+            }
+            
+            .tagline {
+                font-size: 1.3rem;
+                padding: 0 1rem;
+            }
+            
+            .container {
+                padding: 1.5rem;
+            }
+            
+            .get-started-container {
+                padding: 2rem;
+            }
+            
+            .btn-get-started {
+                padding: 1rem 2.5rem;
+                font-size: 1.1rem;
+                max-width: 300px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .chain-logo {
+                font-size: 2.8rem;
+            }
+            
+            .chain-logo::before {
                 font-size: 3rem;
             }
-
-            .bondly-logo::before {
-                font-size: 2.5rem;
-            }
-
-            .hero h1 {
-                font-size: 2.5rem;
+            
+            .tagline {
+                font-size:1.1rem;
+                margin-bottom: 2.5rem;
             }
             
-            .hero p {
-                font-size: 1.2rem;
+            .get-started-container {
+                padding: 1.5rem;
             }
             
-            .section-title {
-                font-size: 2rem;
-            }
-            
-            .hero-buttons {
-                flex-direction: column;
-                align-items: center;
-            }
-            
-            .btn-primary, .btn-secondary {
-                width: 100%;
-                max-width: 250px;
+            .btn-get-started {
+                padding: 0.9rem 2rem;
+                font-size: 1rem;
+                max-width: 280px;
             }
         }
     </style>
 </head>
 <body>
-    <div class="hero">
-        <div class="hero-content">
-            <!-- Bondly Logo -->
-            <div class="bondly-logo">Bondly</div>
-            
-            <h1>Real Love Stories</h1>
-            <p>For the Love of Love</p>
-            <div class="hero-buttons">
-                <a href="signup.html" class="btn-primary">Create an account</a>
-                <a href="login.html" class="btn-secondary">I have an account</a>
-                                
-                
-            </div>
-            <p class="terms">
-                By signing up, you agree to our Terms. See how we use your data in our Privacy Policy
-            </p>
-        </div>
+    <!-- Main Content -->
+    <div class="container">
+        <!-- Chain Logo -->
+        <div class="chain-logo">WhipRoom</div>
+        
+        <p class="tagline">
+            Kink room👹😈👿🤬
+        </p>
     </div>
-
-    <section class="love-stories">
-        <h2 class="section-title">Real Love Stories</h2>
-        <div class="stories-container">
-            <div class="story-card">
-                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=764&q=80" alt="Couple 1" class="story-image">
-                <div class="story-content">
-                    <h3 class="story-title">Sarah & Michael</h3>
-                    <p class="story-text">"We matched during the pandemic and had our first date over video call. Two years later, we're engaged!"</p>
-                </div>
-            </div>
-            
-            <div class="story-card">
-                <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=774&q=80" alt="Couple 2" class="story-image">
-                <div class="story-content">
-                    <h3 class="story-title">James & Emma</h3>
-                    <p class="story-text">"We both swiped right on our morning commute. Our first date was at the coffee shop near our office."</p>
-                </div>
-            </div>
-            
-            <div class="story-card">
-                <img src="https://images.unsplash.com/photo-1494790108755-2616b612b786?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=774&q=80" alt="Couple 3" class="story-image">
-                <div class="story-content">
-                    <h3 class="story-title">Alex & Taylor</h3>
-                    <p class="story-text">"We connected over our love for hiking. Our first date was a sunrise hike, and we've been exploring together ever since."</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <footer class="footer">
-        <div class="footer-content">
-            <div class="footer-links">
-            <a href="policy.html" class="footer-links">Privacy Policy</a>
-            <a href="contact.html">Contact Support</a>
-            <a href="about.html">About Us</a>
-            </div>
-            <p class="copyright">© 2023 Bondly. All rights reserved.</p>
-        </div>
-    </footer>
-
- 
+    
+    <!-- Get Started Button at Bottom -->
+    <div class="get-started-container">
+        <a href="login.html" class="btn-get-started">Get Started</a>
+    </div>
 </body>
 </html>
