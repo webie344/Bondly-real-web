@@ -38,7 +38,194 @@
             padding: 0;
             box-sizing: border-box;
         }
+        /* ========== SHORTENED REPLY PREVIEW STYLES ========== */
+/* Reply Indicator - SHORTENED VERSION */
+.reply-indicator {
+    background: rgba(114, 137, 218, 0.1);
+    border-left: 3px solid #7289da;
+    padding: 10px 12px;
+    margin: 0;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #666;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    z-index: 10;
+    animation: slideDown 0.2s ease;
+    max-height: 44px;
+    overflow: hidden;
+}
 
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.reply-indicator-content {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-right: 8px;
+    max-width: calc(100% - 40px);
+}
+
+/* Shorten the preview text to 3 words */
+.reply-indicator-content span:not(.reply-sender) {
+    display: inline;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Show only first 3 words of the replied message */
+.reply-preview-text {
+    display: inline-block;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-style: italic;
+}
+
+.reply-sender {
+    font-weight: 600;
+    color: #7289da;
+    margin: 0 3px;
+    white-space: nowrap;
+}
+
+.cancel-reply {
+    background: none;
+    border: none;
+    color: #7289da;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 32px;
+    flex-shrink: 0;
+}
+
+.cancel-reply:hover {
+    background: rgba(114, 137, 218, 0.1);
+}
+
+.cancel-reply i {
+    font-size: 14px;
+}
+
+/* Shortened reply preview in messages */
+.replying-to {
+    background: rgba(114, 137, 218, 0.08);
+    border-left: 3px solid #7289da;
+    padding: 6px 10px;
+    margin-bottom: 6px;
+    border-radius: 5px;
+    font-size: 12px;
+    color: #666;
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    max-height: 32px;
+}
+
+.replying-to .reply-sender {
+    font-weight: 600;
+    color: #7289da;
+    font-size: 12px;
+    margin: 0 3px;
+    flex-shrink: 0;
+}
+
+.replying-to .reply-preview {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100px;
+    font-style: italic;
+    flex: 1;
+}
+
+/* Update the JavaScript function to show only 3 words */
+.reply-indicator-content::after {
+    content: '...';
+    display: inline;
+}
+
+/* For image replies */
+.reply-indicator-content .image-indicator {
+    font-style: italic;
+    color: #999;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+    .reply-indicator {
+        padding: 8px 10px;
+        font-size: 12px;
+        max-height: 40px;
+    }
+    
+    .reply-indicator-content {
+        max-width: calc(100% - 35px);
+    }
+    
+    .reply-preview-text {
+        max-width: 80px;
+    }
+    
+    .replying-to {
+        padding: 5px 8px;
+        font-size: 11px;
+        max-height: 28px;
+    }
+    
+    .replying-to .reply-preview {
+        max-width: 70px;
+    }
+}
+
+@media (max-width: 480px) {
+    .reply-indicator {
+        padding: 6px 8px;
+        font-size: 11px;
+        max-height: 36px;
+    }
+    
+    .reply-indicator-content {
+        max-width: calc(100% - 30px);
+    }
+    
+    .reply-preview-text {
+        max-width: 60px;
+    }
+    
+    .cancel-reply {
+        min-width: 28px;
+        min-height: 28px;
+        padding: 3px 6px;
+    }
+    
+    .cancel-reply i {
+        font-size: 12px;
+    }
+}
         body {
             font-family: 'Inter', sans-serif;
             background-color: var(--bg-secondary);
@@ -446,6 +633,13 @@
             <button class="create-group-btn" id="createGroupBtn">
                 <i class="fas fa-plus"></i>
                 Create Group
+            </button>
+            <button class="create-group-btn" >
+
+                <a href="admin-groups.html">
+                                    <i class="fas fa-scissors"></i>
+                edit Group
+                </a>
             </button>
         </div>
 

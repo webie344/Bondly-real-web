@@ -18,7 +18,8 @@ import {
     arrayUnion,
     arrayRemove,
     increment,
-    deleteDoc
+    deleteDoc,
+    writeBatch
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 import { 
@@ -78,8 +79,292 @@ class GroupChat {
         this.unsubscribeMembers = null;
         this.unsubscribeAuth = null;
         
+        // Reply functionality variables
+        this.replyingToMessage = null;
+        this.longPressTimer = null;
+        this.selectedMessage = null;
+        this.messageContextMenu = null;
+        this.isModalInitialized = false;
+        
+        // Track if listeners are already set up
+        this.areListenersSetup = false;
+        
         this.setupAuthListener();
+        this.createMessageContextMenu();
+        // Don't create modal here, it will be created when needed
     }
+
+    // ==================== NEW ADMIN FUNCTIONS ====================
+
+    // Get all groups created by current user (admin groups) - NO INDEX REQUIRED VERSION
+    async getAdminGroups() {
+        try {
+            if (!this.firebaseUser) {
+                throw new Error('You must be logged in to view admin groups');
+            }
+
+            // Get ALL groups first, then filter client-side
+            const groupsRef = collection(db, 'groups');
+            const q = query(groupsRef, orderBy('createdAt', 'desc'));
+            
+            const querySnapshot = await getDocs(q);
+            
+            const groups = [];
+            querySnapshot.forEach(doc => {
+                const data = doc.data();
+                
+                // Only include groups created by current user (client-side filter)
+                if (data.createdBy === this.firebaseUser.uid) {
+                    groups.push({ 
+                        id: doc.id, 
+                        ...data,
+                        createdAt: data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate() : data.createdAt) : new Date(),
+                        updatedAt: data.updatedAt ? (data.updatedAt.toDate ? data.updatedAt.toDate() : data.updatedAt) : new Date()
+                    });
+                }
+            });
+            
+            return groups;
+        } catch (error) {
+            console.error('Error getting admin groups:', error);
+            throw error;
+        }
+    }
+
+    // Get group members with admin info
+    async getGroupMembersWithDetails(groupId) {
+        try {
+            const membersRef = collection(db, 'groups', groupId, 'members');
+            const q = query(membersRef, orderBy('joinedAt', 'asc'));
+            const querySnapshot = await getDocs(q);
+            
+            const members = [];
+            
+            // Get group info to check who is admin
+            const groupRef = doc(db, 'groups', groupId);
+            const groupSnap = await getDoc(groupRef);
+            const groupData = groupSnap.exists() ? groupSnap.data() : null;
+            const adminId = groupData?.createdBy;
+            
+            for (const docSnap of querySnapshot.docs) {
+                const data = docSnap.data();
+                
+                // Get additional user info
+                const userRef = doc(db, 'group_users', docSnap.id);
+                const userSnap = await getDoc(userRef);
+                const userData = userSnap.exists() ? userSnap.data() : {};
+                
+                members.push({
+                    id: docSnap.id,
+                    name: data.name || userData.displayName || 'Unknown',
+                    avatar: data.avatar || userData.avatar || AVATAR_OPTIONS[0],
+                    email: userData.email || '',
+                    role: data.role || (docSnap.id === adminId ? 'creator' : 'member'),
+                    joinedAt: data.joinedAt ? (data.joinedAt.toDate ? data.joinedAt.toDate() : data.joinedAt) : new Date(),
+                    lastActive: data.lastActive ? (data.lastActive.toDate ? data.lastActive.toDate() : data.lastActive) : new Date(),
+                    isAdmin: docSnap.id === adminId
+                });
+            }
+            
+            return members;
+        } catch (error) {
+            console.error('Error getting group members:', error);
+            return [];
+        }
+    }
+
+    // Remove member from group (Admin only)
+    async removeMemberFromGroup(groupId, memberId, memberName = 'Member') {
+        try {
+            if (!this.firebaseUser) {
+                throw new Error('You must be logged in to remove members');
+            }
+
+            // Verify current user is admin of this group
+            const groupRef = doc(db, 'groups', groupId);
+            const groupSnap = await getDoc(groupRef);
+            
+            if (!groupSnap.exists()) {
+                throw new Error('Group not found');
+            }
+
+            const groupData = groupSnap.data();
+            if (groupData.createdBy !== this.firebaseUser.uid) {
+                throw new Error('Only group admin can remove members');
+            }
+
+            // Cannot remove yourself as admin
+            if (memberId === this.firebaseUser.uid) {
+                throw new Error('You cannot remove yourself as admin');
+            }
+
+            // Remove member from members collection
+            const memberRef = doc(db, 'groups', groupId, 'members', memberId);
+            await deleteDoc(memberRef);
+
+            // Decrement member count in group
+            await updateDoc(groupRef, {
+                memberCount: increment(-1),
+                updatedAt: serverTimestamp()
+            });
+
+            // Remove from joined groups in localStorage
+            this.removeJoinedGroupForUser(memberId, groupId);
+
+            // Send notification to removed user
+            await this.sendMemberRemovedNotification(memberId, groupId, groupData.name);
+
+            // Send system message to group
+            await this.sendSystemMessage(
+                groupId, 
+                `${memberName} has been removed from the group by admin.`
+            );
+
+            return true;
+        } catch (error) {
+            console.error('Error removing member:', error);
+            throw error;
+        }
+    }
+
+    // Delete entire group (Admin only)
+    async deleteGroup(groupId) {
+        try {
+            if (!this.firebaseUser) {
+                throw new Error('You must be logged in to delete groups');
+            }
+
+            // Verify current user is admin of this group
+            const groupRef = doc(db, 'groups', groupId);
+            const groupSnap = await getDoc(groupRef);
+            
+            if (!groupSnap.exists()) {
+                throw new Error('Group not found');
+            }
+
+            const groupData = groupSnap.data();
+            if (groupData.createdBy !== this.firebaseUser.uid) {
+                throw new Error('Only group admin can delete the group');
+            }
+
+            // Get all members to notify them
+            const members = await this.getGroupMembersWithDetails(groupId);
+
+            // Create a batch operation for deleting group and all related data
+            const batch = writeBatch(db);
+
+            // Delete all messages in the group
+            const messagesRef = collection(db, 'groups', groupId, 'messages');
+            const messagesSnap = await getDocs(messagesRef);
+            messagesSnap.forEach((docSnap) => {
+                batch.delete(docSnap.ref);
+            });
+
+            // Delete all members in the group
+            const membersRef = collection(db, 'groups', groupId, 'members');
+            const membersSnap = await getDocs(membersRef);
+            membersSnap.forEach((docSnap) => {
+                batch.delete(docSnap.ref);
+            });
+
+            // Delete the group itself
+            batch.delete(groupRef);
+
+            // Commit the batch
+            await batch.commit();
+
+            // Send notifications to all members
+            await Promise.all(members.map(member => 
+                this.sendGroupDeletedNotification(member.id, groupData.name)
+            ));
+
+            // Remove from joined groups for all members
+            members.forEach(member => {
+                this.removeJoinedGroupForUser(member.id, groupId);
+            });
+
+            return true;
+        } catch (error) {
+            console.error('Error deleting group:', error);
+            throw error;
+        }
+    }
+
+    // Helper: Send notification when member is removed
+    async sendMemberRemovedNotification(userId, groupId, groupName) {
+        try {
+            const notificationRef = doc(collection(db, 'notifications'));
+            
+            await setDoc(notificationRef, {
+                userId: userId,
+                type: 'group_member_removed',
+                title: 'Removed from Group',
+                message: `You have been removed from the group "${groupName}"`,
+                groupId: groupId,
+                groupName: groupName,
+                timestamp: serverTimestamp(),
+                read: false
+            });
+            
+            return true;
+        } catch (error) {
+            console.error('Error sending removal notification:', error);
+            return false;
+        }
+    }
+
+    // Helper: Send notification when group is deleted
+    async sendGroupDeletedNotification(userId, groupName) {
+        try {
+            const notificationRef = doc(collection(db, 'notifications'));
+            
+            await setDoc(notificationRef, {
+                userId: userId,
+                type: 'group_deleted',
+                title: 'Group Deleted',
+                message: `The group "${groupName}" has been deleted by the admin`,
+                timestamp: serverTimestamp(),
+                read: false
+            });
+            
+            return true;
+        } catch (error) {
+            console.error('Error sending group deleted notification:', error);
+            return false;
+        }
+    }
+
+    // Helper: Remove joined group from localStorage for specific user
+    removeJoinedGroupForUser(userId, groupId) {
+        // Note: This only works for current user. For other users,
+        // we would need a server-side solution or real-time updates
+        if (userId === this.firebaseUser?.uid) {
+            this.removeJoinedGroup(groupId);
+        }
+    }
+
+    // Helper: Send system message to group
+    async sendSystemMessage(groupId, message) {
+        try {
+            const messagesRef = collection(db, 'groups', groupId, 'messages');
+            
+            await addDoc(messagesRef, {
+                type: 'system',
+                text: message,
+                timestamp: serverTimestamp(),
+                senderId: 'system',
+                senderName: 'System',
+                senderAvatar: ''
+            });
+            
+            return true;
+        } catch (error) {
+            console.error('Error sending system message:', error);
+            throw error;
+        }
+    }
+
+    // ==================== EXISTING FUNCTIONS ====================
 
     // Setup Firebase auth listener
     setupAuthListener() {
@@ -92,14 +377,14 @@ class GroupChat {
                 await this.loadUserProfile(user.uid);
                 
                 // Dispatch event for pages to know auth is ready
-                document.dispatchEvent(new Event('groupAuthReady'));
+                document.dispatchEvent(new CustomEvent('groupAuthReady'));
             } else {
                 this.firebaseUser = null;
                 this.currentUser = null;
                 console.log('User logged out');
                 
                 // Redirect to login if on protected page
-                const protectedPages = ['create-group', 'group'];
+                const protectedPages = ['create-group', 'group', 'admin-groups'];
                 const currentPage = window.location.pathname.split('/').pop().split('.')[0];
                 
                 if (protectedPages.includes(currentPage)) {
@@ -337,31 +622,6 @@ class GroupChat {
         }
     }
 
-    // Remove member from group
-    async removeMember(groupId) {
-        try {
-            if (!this.firebaseUser) return;
-            
-            const memberRef = doc(db, 'groups', groupId, 'members', this.firebaseUser.uid);
-            await deleteDoc(memberRef);
-            
-            // Decrement member count in group document
-            const groupRef = doc(db, 'groups', groupId);
-            await updateDoc(groupRef, {
-                memberCount: increment(-1),
-                updatedAt: serverTimestamp()
-            });
-            
-            // Remove from joined groups
-            this.removeJoinedGroup(groupId);
-            
-            return true;
-        } catch (error) {
-            console.error('Error removing member:', error);
-            throw error;
-        }
-    }
-
     // Get all groups
     async getAllGroups() {
         try {
@@ -511,6 +771,31 @@ class GroupChat {
         }
     }
 
+    // Remove member from group (self)
+    async removeMember(groupId) {
+        try {
+            if (!this.firebaseUser) return;
+            
+            const memberRef = doc(db, 'groups', groupId, 'members', this.firebaseUser.uid);
+            await deleteDoc(memberRef);
+            
+            // Decrement member count in group document
+            const groupRef = doc(db, 'groups', groupId);
+            await updateDoc(groupRef, {
+                memberCount: increment(-1),
+                updatedAt: serverTimestamp()
+            });
+            
+            // Remove from joined groups
+            this.removeJoinedGroup(groupId);
+            
+            return true;
+        } catch (error) {
+            console.error('Error removing member:', error);
+            throw error;
+        }
+    }
+
     // Upload image to Cloudinary
     async uploadImageToCloudinary(file) {
         const formData = new FormData();
@@ -560,7 +845,7 @@ class GroupChat {
         return true;
     }
 
-    // Send message to group (with image support)
+    // Send message to group (with image support and reply)
     async sendMessage(groupId, text = null, imageUrl = null, replyTo = null) {
         try {
             if (!this.firebaseUser || !this.currentUser) {
@@ -576,9 +861,13 @@ class GroupChat {
                 senderId: this.firebaseUser.uid,
                 senderName: this.currentUser.name,
                 senderAvatar: this.currentUser.avatar,
-                timestamp: serverTimestamp(),
-                replyTo: replyTo || null
+                timestamp: serverTimestamp()
             };
+            
+            // Add reply if provided
+            if (replyTo) {
+                messageData.replyTo = replyTo;
+            }
             
             // Add text if provided
             if (text) {
@@ -607,6 +896,9 @@ class GroupChat {
             
             // Update user's last active time
             await this.updateLastActive(groupId);
+            
+            // Clear reply if any
+            this.clearReply();
             
             return true;
         } catch (error) {
@@ -779,6 +1071,606 @@ class GroupChat {
         }
     }
 
+    // ==================== DELETE MODAL FUNCTIONALITY ====================
+
+    // Initialize delete modal (called when needed)
+    initializeDeleteModal() {
+        if (this.isModalInitialized) return;
+        
+        // Check if modal already exists
+        let modal = document.getElementById('deleteMessageModal');
+        if (!modal) {
+            // Create modal HTML
+            const modalHTML = `
+                <div id="deleteMessageModal" class="delete-modal" style="display: none;">
+                    <div class="modal-overlay" id="modalOverlay"></div>
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>Delete Message</h3>
+                            <button class="modal-close" id="modalCloseBtn">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <p id="deleteModalMessage">Are you sure you want to delete this message?</p>
+                            <p class="modal-warning">This action cannot be undone.</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="modal-btn cancel-btn" id="modalCancelBtn">Cancel</button>
+                            <button class="modal-btn delete-btn" id="modalDeleteBtn">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Add modal to body
+            const modalContainer = document.createElement('div');
+            modalContainer.innerHTML = modalHTML;
+            document.body.appendChild(modalContainer);
+            
+            // Get modal elements
+            modal = document.getElementById('deleteMessageModal');
+        }
+        
+        // Get all modal elements
+        const modalOverlay = document.getElementById('modalOverlay');
+        const modalCloseBtn = document.getElementById('modalCloseBtn');
+        const modalCancelBtn = document.getElementById('modalCancelBtn');
+        const modalDeleteBtn = document.getElementById('modalDeleteBtn');
+        
+        // Add event listeners
+        if (modalOverlay) {
+            modalOverlay.addEventListener('click', () => this.hideDeleteModal());
+        }
+        
+        if (modalCloseBtn) {
+            modalCloseBtn.addEventListener('click', () => this.hideDeleteModal());
+        }
+        
+        if (modalCancelBtn) {
+            modalCancelBtn.addEventListener('click', () => this.hideDeleteModal());
+        }
+        
+        if (modalDeleteBtn) {
+            modalDeleteBtn.addEventListener('click', () => this.confirmDeleteMessage());
+        }
+        
+        this.isModalInitialized = true;
+    }
+
+    // Show delete modal
+    showDeleteModal(message) {
+        // Initialize modal if not already done
+        this.initializeDeleteModal();
+        
+        this.selectedMessage = message;
+        
+        // Update modal message
+        const deleteModalMessage = document.getElementById('deleteModalMessage');
+        if (deleteModalMessage) {
+            deleteModalMessage.textContent = 'Are you sure you want to delete this message?';
+        }
+        
+        // Show modal
+        const modal = document.getElementById('deleteMessageModal');
+        if (modal) {
+            modal.style.display = 'flex';
+            document.body.classList.add('modal-open');
+            
+            // Enable delete button
+            const deleteBtn = document.getElementById('modalDeleteBtn');
+            if (deleteBtn) {
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = 'Delete';
+            }
+        }
+    }
+
+    // Hide delete modal
+    hideDeleteModal() {
+        const modal = document.getElementById('deleteMessageModal');
+        if (modal) {
+            modal.style.display = 'none';
+            document.body.classList.remove('modal-open');
+        }
+        this.selectedMessage = null;
+    }
+
+    // Confirm and delete message
+    async confirmDeleteMessage() {
+        if (!this.selectedMessage || !this.currentGroupId) {
+            console.error('No message selected or no group ID');
+            this.hideDeleteModal();
+            return;
+        }
+        
+        const deleteBtn = document.getElementById('modalDeleteBtn');
+        if (!deleteBtn) return;
+        
+        const originalText = deleteBtn.textContent;
+        
+        try {
+            // Check if user owns the message
+            if (this.selectedMessage.senderId !== this.firebaseUser?.uid) {
+                alert('You can only delete your own messages.');
+                this.hideDeleteModal();
+                return;
+            }
+            
+            // Disable delete button and show loading
+            deleteBtn.disabled = true;
+            deleteBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
+            
+            console.log('Deleting message:', this.selectedMessage.id, 'from group:', this.currentGroupId);
+            
+            // Delete from Firestore
+            const messageRef = doc(db, 'groups', this.currentGroupId, 'messages', this.selectedMessage.id);
+            await deleteDoc(messageRef);
+            
+            console.log('Message deleted successfully');
+            
+            // Hide modal
+            this.hideDeleteModal();
+            
+            // Show success message
+            this.showNotification('Message deleted successfully', 'success');
+            
+        } catch (error) {
+            console.error('Error deleting message:', error);
+            
+            // Show error
+            this.showNotification('Failed to delete message: ' + error.message, 'error');
+            
+            // Reset button
+            deleteBtn.disabled = false;
+            deleteBtn.textContent = originalText;
+        }
+    }
+
+    // Show notification
+    showNotification(message, type = 'info') {
+        // Remove existing notifications
+        const existingNotifications = document.querySelectorAll('.notification');
+        existingNotifications.forEach(n => n.remove());
+        
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.innerHTML = `
+            <div class="notification-icon">
+                <i class="fas ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
+            </div>
+            <div class="notification-content">
+                <div class="notification-message">${message}</div>
+            </div>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Add notification styles if not already added
+        if (!document.getElementById('notification-styles')) {
+            const notificationStyles = document.createElement('style');
+            notificationStyles.id = 'notification-styles';
+            notificationStyles.textContent = `
+                .notification {
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: white;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    padding: 12px 16px;
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    z-index: 10000;
+                    animation: slideIn 0.3s ease;
+                    max-width: 300px;
+                }
+                
+                .notification-success {
+                    border-left: 4px solid #2ed573;
+                }
+                
+                .notification-error {
+                    border-left: 4px solid #ff4757;
+                }
+                
+                .notification-info {
+                    border-left: 4px solid #3498db;
+                }
+                
+                .notification-icon {
+                    font-size: 20px;
+                }
+                
+                .notification-success .notification-icon {
+                    color: #2ed573;
+                }
+                
+                .notification-error .notification-icon {
+                    color: #ff4757;
+                }
+                
+                .notification-info .notification-icon {
+                    color: #3498db;
+                }
+                
+                .notification-content {
+                    flex: 1;
+                }
+                
+                .notification-message {
+                    font-size: 14px;
+                    color: #333;
+                }
+                
+                @keyframes slideIn {
+                    from {
+                        transform: translateX(100%);
+                        opacity: 0;
+                    }
+                    to {
+                        transform: translateX(0);
+                        opacity: 1;
+                    }
+                }
+                
+                @keyframes slideOut {
+                    from {
+                        transform: translateX(0);
+                        opacity: 1;
+                    }
+                    to {
+                        transform: translateX(100%);
+                        opacity: 0;
+                    }
+                }
+            `;
+            document.head.appendChild(notificationStyles);
+        }
+        
+        // Auto remove after 3 seconds
+        setTimeout(() => {
+            notification.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => notification.remove(), 300);
+        }, 3000);
+    }
+
+    // ==================== REPLY FUNCTIONALITY ====================
+
+    // Create message context menu
+    createMessageContextMenu() {
+        // Remove existing context menu if any
+        const existingMenu = document.getElementById('messageContextMenu');
+        if (existingMenu) {
+            existingMenu.remove();
+        }
+        
+        // Create new context menu
+        this.messageContextMenu = document.createElement('div');
+        this.messageContextMenu.id = 'messageContextMenu';
+        this.messageContextMenu.className = 'message-context-menu';
+        this.messageContextMenu.innerHTML = `
+            <div class="menu-item" id="replyMenuItem">
+                <i class="fas fa-reply"></i>
+                <span>Reply</span>
+            </div>
+            <div class="menu-item" id="deleteMenuItem">
+                <i class="fas fa-trash"></i>
+                <span>Delete</span>
+            </div>
+        `;
+        
+        // Add context menu styles
+        const contextMenuStyles = document.createElement('style');
+        contextMenuStyles.id = 'context-menu-styles';
+        contextMenuStyles.textContent = `
+            .message-context-menu {
+                position: fixed;
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                z-index: 9998;
+                display: none;
+                min-width: 150px;
+                overflow: hidden;
+            }
+            
+            .menu-item {
+                padding: 12px 16px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                cursor: pointer;
+                transition: background 0.2s;
+                border-bottom: 1px solid #f5f5f5;
+            }
+            
+            .menu-item:last-child {
+                border-bottom: none;
+            }
+            
+            .menu-item:hover {
+                background: #f5f5f5;
+            }
+            
+            .menu-item i {
+                width: 20px;
+                color: #666;
+            }
+            
+            #deleteMenuItem {
+                color: #ff4757;
+            }
+            
+            #deleteMenuItem i {
+                color: #ff4757;
+            }
+        `;
+        
+        document.head.appendChild(contextMenuStyles);
+        document.body.appendChild(this.messageContextMenu);
+        
+        // Add event listeners
+        document.getElementById('replyMenuItem').addEventListener('click', () => {
+            this.handleReply();
+            this.hideContextMenu();
+        });
+        
+        document.getElementById('deleteMenuItem').addEventListener('click', () => {
+            this.handleDelete();
+            this.hideContextMenu();
+        });
+        
+        // Close menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (this.messageContextMenu && !this.messageContextMenu.contains(e.target)) {
+                this.hideContextMenu();
+            }
+        });
+        
+        // Prevent scrolling when context menu is open
+        this.messageContextMenu.addEventListener('wheel', (e) => {
+            e.preventDefault();
+        });
+    }
+
+    // Show context menu
+    showContextMenu(x, y, message) {
+        this.selectedMessage = message;
+        
+        // Check if user owns the message - only show delete for own messages
+        const deleteMenuItem = document.getElementById('deleteMenuItem');
+        if (deleteMenuItem) {
+            if (message.senderId === this.firebaseUser?.uid) {
+                deleteMenuItem.style.display = 'flex';
+            } else {
+                deleteMenuItem.style.display = 'none';
+            }
+        }
+        
+        // Position the menu
+        this.messageContextMenu.style.left = x + 'px';
+        this.messageContextMenu.style.top = y + 'px';
+        this.messageContextMenu.style.display = 'block';
+        
+        // Adjust if menu goes off screen
+        const rect = this.messageContextMenu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) {
+            this.messageContextMenu.style.left = (x - rect.width) + 'px';
+        }
+        if (rect.bottom > window.innerHeight) {
+            this.messageContextMenu.style.top = (y - rect.height) + 'px';
+        }
+    }
+
+    // Hide context menu
+    hideContextMenu() {
+        if (this.messageContextMenu) {
+            this.messageContextMenu.style.display = 'none';
+        }
+        this.selectedMessage = null;
+    }
+
+    // Handle reply action
+    handleReply() {
+        if (!this.selectedMessage) return;
+        
+        this.replyingToMessage = this.selectedMessage;
+        
+        // Show reply indicator in chat
+        this.showReplyIndicator();
+        
+        // Focus message input
+        const messageInput = document.getElementById('messageInput');
+        if (messageInput) {
+            messageInput.focus();
+        }
+    }
+
+    // Truncate name to 4 letters
+    truncateName(name) {
+        if (!name) return '';
+        if (name.length <= 4) return name;
+        return name.substring(0, 4) + '...';
+    }
+
+    // Show reply indicator with truncated name
+    showReplyIndicator() {
+        // Remove existing indicator
+        this.removeReplyIndicator();
+        
+        if (!this.replyingToMessage) return;
+        
+        const messageInputContainer = document.querySelector('.message-input-container');
+        if (!messageInputContainer) return;
+        
+        const indicator = document.createElement('div');
+        indicator.className = 'reply-indicator';
+        indicator.id = 'replyIndicator';
+        
+        // Truncate sender name to 4 letters
+        const truncatedName = this.truncateName(this.replyingToMessage.senderName);
+        
+        indicator.innerHTML = `
+            <div class="reply-indicator-content">
+                <span style="color: #666;">Replying to</span> 
+                <span class="reply-sender">${truncatedName}</span>
+                <span style="color: #666;">:</span> 
+                ${this.replyingToMessage.text ? 
+                    (this.replyingToMessage.text.length > 40 ? 
+                        this.replyingToMessage.text.substring(0, 40) + '...' : 
+                        this.replyingToMessage.text) : 
+                    '📷 Image'}
+            </div>
+            <button class="cancel-reply" id="cancelReply">
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+        
+        messageInputContainer.parentNode.insertBefore(indicator, messageInputContainer);
+        
+        // Add cancel event
+        document.getElementById('cancelReply').addEventListener('click', () => {
+            this.clearReply();
+        });
+    }
+
+    // Remove reply indicator
+    removeReplyIndicator() {
+        const indicator = document.getElementById('replyIndicator');
+        if (indicator) {
+            indicator.remove();
+        }
+    }
+
+    // Clear reply
+    clearReply() {
+        this.replyingToMessage = null;
+        this.removeReplyIndicator();
+    }
+
+    // Handle delete action
+    handleDelete() {
+        if (!this.selectedMessage) return;
+        
+        // Show delete modal instead of alert
+        this.showDeleteModal(this.selectedMessage);
+    }
+
+    // Setup long press detection for messages
+    setupMessageLongPress(messagesContainer) {
+        if (!messagesContainer) return;
+        
+        // Clear existing listeners
+        messagesContainer.onmousedown = null;
+        messagesContainer.ontouchstart = null;
+        messagesContainer.onmouseup = null;
+        messagesContainer.ontouchend = null;
+        messagesContainer.oncontextmenu = null;
+        
+        // Variables to track touch/mouse state
+        let isDragging = false;
+        let startX = 0;
+        let startY = 0;
+        const dragThreshold = 10; // pixels
+        
+        // Handle touch/mouse start
+        const handleStart = (e) => {
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            
+            if (!clientX || !clientY) return;
+            
+            startX = clientX;
+            startY = clientY;
+            isDragging = false;
+            
+            // Start long press timer
+            this.longPressTimer = setTimeout(() => {
+                // Only show context menu if not dragging
+                if (!isDragging) {
+                    // Find the message element
+                    let messageElement = e.target;
+                    while (messageElement && !messageElement.classList.contains('message-text') && 
+                           !messageElement.classList.contains('message-group') && 
+                           messageElement !== messagesContainer) {
+                        messageElement = messageElement.parentElement;
+                    }
+                    
+                    if (messageElement && messageElement !== messagesContainer) {
+                        // Find message ID
+                        const messageId = this.findMessageIdFromElement(messageElement);
+                        if (messageId) {
+                            // Find message data
+                            const message = window.currentMessages?.find(m => m.id === messageId);
+                            if (message) {
+                                e.preventDefault();
+                                this.showContextMenu(clientX, clientY, message);
+                            }
+                        }
+                    }
+                }
+            }, 500); // 500ms for long press
+        };
+        
+        // Handle touch/mouse move
+        const handleMove = (e) => {
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            
+            if (!clientX || !clientY) return;
+            
+            // Check if user is dragging (swiping)
+            const deltaX = Math.abs(clientX - startX);
+            const deltaY = Math.abs(clientY - startY);
+            
+            if (deltaX > dragThreshold || deltaY > dragThreshold) {
+                isDragging = true;
+                // Cancel long press if dragging
+                if (this.longPressTimer) {
+                    clearTimeout(this.longPressTimer);
+                    this.longPressTimer = null;
+                }
+            }
+        };
+        
+        // Handle touch/mouse end
+        const handleEnd = () => {
+            if (this.longPressTimer) {
+                clearTimeout(this.longPressTimer);
+                this.longPressTimer = null;
+            }
+        };
+        
+        // Add event listeners
+        messagesContainer.addEventListener('mousedown', handleStart);
+        messagesContainer.addEventListener('touchstart', handleStart);
+        
+        messagesContainer.addEventListener('mousemove', handleMove);
+        messagesContainer.addEventListener('touchmove', handleMove);
+        
+        messagesContainer.addEventListener('mouseup', handleEnd);
+        messagesContainer.addEventListener('touchend', handleEnd);
+        messagesContainer.addEventListener('touchcancel', handleEnd);
+        
+        // Prevent default context menu
+        messagesContainer.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+    }
+
+    // Find message ID from element
+    findMessageIdFromElement(element) {
+        // Look for data-message-id attribute
+        let current = element;
+        while (current && current !== document.body) {
+            if (current.dataset?.messageId) {
+                return current.dataset.messageId;
+            }
+            current = current.parentElement;
+        }
+        return null;
+    }
+
     // Logout
     async logout() {
         try {
@@ -817,6 +1709,8 @@ class GroupChat {
             this.unsubscribeAuth();
             this.unsubscribeAuth = null;
         }
+        
+        this.areListenersSetup = false;
     }
 }
 
@@ -841,6 +1735,9 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'group':
                 initGroupPage();
                 break;
+            case 'admin-groups':
+                initAdminGroupsPage();
+                break;
             default:
                 // For pages that don't need auth check
                 if (currentPage === 'login' || currentPage === 'signup') {
@@ -859,7 +1756,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Also check after a delay in case auth was already ready
     setTimeout(() => {
         if (groupChat.firebaseUser) {
-            document.dispatchEvent(new Event('groupAuthReady'));
+            document.dispatchEvent(new CustomEvent('groupAuthReady'));
         }
     }, 500);
 });
@@ -1433,7 +2330,7 @@ function initSetPage() {
     }
 }
 
-// Initialize Group Chat Page with Image Support
+// Initialize Group Chat Page with Image Support and Reply Functionality - FIXED DUPLICATE MESSAGES
 function initGroupPage() {
     const sidebar = document.getElementById('sidebar');
     const backBtn = document.getElementById('backBtn');
@@ -1460,6 +2357,7 @@ function initGroupPage() {
     let members = [];
     let groupData = null;
     let tempMessages = new Map(); // Store temporary messages
+    let isInitialLoad = true; // Track initial load
     
     if (!groupId) {
         window.location.href = 'groups.html';
@@ -1474,6 +2372,7 @@ function initGroupPage() {
     
     // Store current group ID for temporary messages
     window.currentGroupId = groupId;
+    groupChat.currentGroupId = groupId; // Set current group ID for message deletion
     
     // Check if user needs profile setup - FIXED: Check localStorage flag first
     if (groupChat.needsProfileSetup() && !groupChat.isProfileSetupInStorage()) {
@@ -1529,8 +2428,8 @@ function initGroupPage() {
         messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
     });
     
-    // Send message
-    sendBtn.addEventListener('click', sendMessage);
+    // Send message with reply support
+    sendBtn.addEventListener('click', () => sendMessage());
     
     messageInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -1567,8 +2466,8 @@ function initGroupPage() {
                     attachmentBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
                     attachmentBtn.disabled = true;
                     
-                    // Send image message
-                    await groupChat.sendImageMessage(groupId, file);
+                    // Send image message with reply support
+                    await groupChat.sendImageMessage(groupId, file, groupChat.replyingToMessage?.id);
                     
                     // Restore button state
                     attachmentBtn.innerHTML = originalHTML;
@@ -1645,9 +2544,12 @@ function initGroupPage() {
             members = await groupChat.getGroupMembers(groupId);
             updateMembersList();
             
-            // Load initial messages
-            messages = await groupChat.getMessages(groupId);
-            displayMessages();
+            // Load initial messages (only on initial load)
+            if (isInitialLoad) {
+                messages = await groupChat.getMessages(groupId);
+                displayMessages();
+                isInitialLoad = false;
+            }
             
         } catch (error) {
             console.error('Error loading group data:', error);
@@ -1655,19 +2557,37 @@ function initGroupPage() {
         }
     }
     
-    // Setup real-time listeners
+    // Setup real-time listeners - FIXED DUPLICATE LISTENERS
     function setupListeners() {
+        // Don't setup listeners if already set up
+        if (groupChat.areListenersSetup) {
+            console.log('Listeners already set up, skipping...');
+            return;
+        }
+        
         // Listen for messages
         groupChat.listenToMessages(groupId, (newMessages) => {
-            messages = newMessages;
+            console.log('Received messages:', newMessages.length);
             
-            // Add any temporary messages back
-            tempMessages.forEach((tempMsg, tempId) => {
-                if (!messages.some(m => m.id === tempId)) {
-                    messages.push(tempMsg);
+            // Filter out any duplicate messages
+            const uniqueMessages = [];
+            const seenIds = new Set();
+            
+            newMessages.forEach(msg => {
+                if (!seenIds.has(msg.id)) {
+                    seenIds.add(msg.id);
+                    uniqueMessages.push(msg);
                 }
             });
             
+            // Add any temporary messages back
+            tempMessages.forEach((tempMsg, tempId) => {
+                if (!uniqueMessages.some(m => m.id === tempId)) {
+                    uniqueMessages.push(tempMsg);
+                }
+            });
+            
+            messages = uniqueMessages;
             displayMessages();
         });
         
@@ -1684,7 +2604,7 @@ function initGroupPage() {
         });
         
         // Update last active every minute
-        setInterval(() => {
+        const activeInterval = setInterval(() => {
             groupChat.updateLastActive(groupId);
         }, 60000);
         
@@ -1692,6 +2612,13 @@ function initGroupPage() {
         window.addEventListener('focus', () => {
             groupChat.updateLastActive(groupId);
         });
+        
+        // Clean up interval on page unload
+        window.addEventListener('beforeunload', () => {
+            clearInterval(activeInterval);
+        });
+        
+        groupChat.areListenersSetup = true;
     }
     
     // Update members list with admin tags
@@ -1730,7 +2657,7 @@ function initGroupPage() {
         });
     }
     
-    // Display messages with image support
+    // Display messages with image support and reply functionality
     function displayMessages() {
         if (messages.length === 0) {
             noMessages.style.display = 'block';
@@ -1739,6 +2666,9 @@ function initGroupPage() {
         }
         
         noMessages.style.display = 'none';
+        
+        // Store messages globally for long-press detection
+        window.currentMessages = messages;
         
         // Group messages by sender and time
         const groupedMessages = [];
@@ -1774,6 +2704,7 @@ function initGroupPage() {
         groupedMessages.forEach(group => {
             const groupDiv = document.createElement('div');
             groupDiv.className = 'message-group';
+            groupDiv.dataset.senderId = group.senderId;
             
             // First message in group
             const firstMessage = group.messages[0];
@@ -1793,11 +2724,16 @@ function initGroupPage() {
                         if (msg.replyTo) {
                             const repliedMessage = messages.find(m => m.id === msg.replyTo);
                             if (repliedMessage) {
+                                // Truncate sender name to 4 letters
+                                const truncatedName = groupChat.truncateName(repliedMessage.senderName);
+                                
                                 replyHtml = `
-                                    <div class="reply-to">
-                                        Replying to <span class="reply-sender">${repliedMessage.senderName}</span>: 
-                                        ${repliedMessage.text ? (repliedMessage.text.length > 50 ? 
-                                            repliedMessage.text.substring(0, 50) + '...' : 
+                                    <div class="replying-to">
+                                        <span style="color: #666;">Replying to</span> 
+                                        <span class="reply-sender">${truncatedName}</span>
+                                        <span style="color: #666;">:</span> 
+                                        ${repliedMessage.text ? (repliedMessage.text.length > 40 ? 
+                                            repliedMessage.text.substring(0, 40) + '...' : 
                                             repliedMessage.text) : '📷 Image'}
                                     </div>
                                 `;
@@ -1811,7 +2747,7 @@ function initGroupPage() {
                         if (msg.imageUrl) {
                             // Image message
                             return `
-                                <div class="message-text">
+                                <div class="message-text" data-message-id="${msg.id}">
                                     ${replyHtml}
                                     <div class="message-image-container" style="position: relative;">
                                         <img src="${msg.imageUrl}" 
@@ -1830,10 +2766,19 @@ function initGroupPage() {
                                     ${isTemp ? '<div style="font-size: 11px; color: #999; margin-top: 4px;">Sending...</div>' : ''}
                                 </div>
                             `;
+                        } else if (msg.type === 'system') {
+                            // System message
+                            return `
+                                <div class="message-text system-message" data-message-id="${msg.id}">
+                                    <div style="font-style: italic; color: #666; text-align: center; padding: 4px 0;">
+                                        ${msg.text}
+                                    </div>
+                                </div>
+                            `;
                         } else {
                             // Text message
                             return `
-                                <div class="message-text">
+                                <div class="message-text" data-message-id="${msg.id}">
                                     ${replyHtml}
                                     ${msg.text || ''}
                                     ${isTemp ? '<div style="font-size: 11px; color: #999; margin-top: 4px;">Sending...</div>' : ''}
@@ -1847,13 +2792,16 @@ function initGroupPage() {
             messagesContainer.appendChild(groupDiv);
         });
         
+        // Setup long press detection
+        groupChat.setupMessageLongPress(messagesContainer);
+        
         // Scroll to bottom
         setTimeout(() => {
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }, 100);
     }
     
-    // Send message function
+    // Send message function with reply support
     async function sendMessage() {
         const text = messageInput.value.trim();
         
@@ -1863,7 +2811,13 @@ function initGroupPage() {
         sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         
         try {
-            await groupChat.sendMessage(groupId, text);
+            // Send with reply if replying
+            await groupChat.sendMessage(
+                groupId, 
+                text, 
+                null, 
+                groupChat.replyingToMessage?.id
+            );
             
             // Clear input
             messageInput.value = '';
@@ -1947,7 +2901,339 @@ function initGroupPage() {
     };
 }
 
-// Make groupChat available globally for debugging
+// ==================== ADMIN GROUPS PAGE INITIALIZATION ====================
+
+function initAdminGroupsPage() {
+    console.log('Initializing Admin Groups Page...');
+    
+    // Check auth
+    if (!groupChat.firebaseUser) {
+        window.location.href = 'login.html';
+        return;
+    }
+    
+    // Load admin groups
+    loadAdminGroups();
+    
+    // Setup back button if exists
+    const backBtn = document.getElementById('backBtn');
+    if (backBtn) {
+        backBtn.addEventListener('click', () => {
+            window.location.href = 'dashboard.html';
+        });
+    }
+    
+    // Setup create group button if exists
+    const createGroupBtn = document.getElementById('createGroupBtn');
+    if (createGroupBtn) {
+        createGroupBtn.addEventListener('click', () => {
+            window.location.href = 'create-group.html';
+        });
+    }
+    
+    // Load admin groups function
+    async function loadAdminGroups() {
+        try {
+            console.log('Loading admin groups...');
+            
+            // Show loading state
+            const groupsList = document.getElementById('groupsList');
+            if (groupsList) {
+                groupsList.innerHTML = '<div class="loading">Loading your groups...</div>';
+            }
+            
+            const groups = await groupChat.getAdminGroups();
+            
+            console.log('Admin groups loaded:', groups.length);
+            
+            if (groups.length === 0) {
+                // Show empty state
+                if (groupsList) {
+                    groupsList.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fas fa-users-slash"></i>
+                            <h3>No Groups Created Yet</h3>
+                            <p>You haven't created any groups yet. Create your first group to get started!</p>
+                            <button id="createFirstGroupBtn" class="primary-btn">
+                                <i class="fas fa-plus"></i> Create Your First Group
+                            </button>
+                        </div>
+                    `;
+                    
+                    // Add event listener to create button
+                    const createFirstGroupBtn = document.getElementById('createFirstGroupBtn');
+                    if (createFirstGroupBtn) {
+                        createFirstGroupBtn.addEventListener('click', () => {
+                            window.location.href = 'create-group.html';
+                        });
+                    }
+                }
+                return;
+            }
+            
+            // Display groups
+            displayGroups(groups);
+            
+        } catch (error) {
+            console.error('Error loading admin groups:', error);
+            
+            // Show error state
+            const groupsList = document.getElementById('groupsList');
+            if (groupsList) {
+                groupsList.innerHTML = `
+                    <div class="error-state">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <h3>Error Loading Groups</h3>
+                        <p>${error.message || 'Failed to load groups. Please try again.'}</p>
+                        <button onclick="location.reload()" class="primary-btn">
+                            <i class="fas fa-redo"></i> Retry
+                        </button>
+                    </div>
+                `;
+            }
+        }
+    }
+    
+    // Display groups function
+    function displayGroups(groups) {
+        const groupsList = document.getElementById('groupsList');
+        if (!groupsList) return;
+        
+        groupsList.innerHTML = '';
+        
+        groups.forEach(group => {
+            const groupCard = document.createElement('div');
+            groupCard.className = 'group-card';
+            
+            // Format date
+            const createdAt = group.createdAt ? 
+                new Date(group.createdAt).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                }) : 'Unknown';
+            
+            groupCard.innerHTML = `
+                <div class="group-header">
+                    <div class="group-info">
+                        <div class="group-avatar">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="group-details">
+                            <h3>${group.name}</h3>
+                            <p class="group-description">${group.description || 'No description'}</p>
+                            <div class="group-meta">
+                                <span class="group-members">
+                                    <i class="fas fa-users"></i>
+                                    ${group.memberCount || 0} members
+                                </span>
+                                <span class="group-date">
+                                    <i class="fas fa-calendar"></i>
+                                    Created ${createdAt}
+                                </span>
+                                <span class="group-privacy">
+                                    <i class="fas ${group.privacy === 'private' ? 'fa-lock' : 'fa-globe'}"></i>
+                                    ${group.privacy === 'private' ? 'Private' : 'Public'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="group-actions">
+                        <button class="view-group-btn" onclick="window.location.href='group.html?id=${group.id}'">
+                            <i class="fas fa-comments"></i> View Chat
+                        </button>
+                        <button class="manage-members-btn" onclick="viewGroupMembers('${group.id}', '${group.name.replace(/'/g, "\\'")}')">
+                            <i class="fas fa-users"></i> Manage Members
+                        </button>
+                        <button class="delete-group-btn" onclick="confirmDeleteGroup('${group.id}', '${group.name.replace(/'/g, "\\'")}')">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            groupsList.appendChild(groupCard);
+        });
+    }
+    
+    // View group members function
+    window.viewGroupMembers = async function(groupId, groupName) {
+        try {
+            // Show loading
+            const membersList = document.getElementById('membersList');
+            const membersTitle = document.getElementById('membersTitle');
+            const groupsContainer = document.getElementById('groupsContainer');
+            const membersSection = document.getElementById('membersSection');
+            
+            if (membersTitle) {
+                membersTitle.textContent = `Members of ${groupName}`;
+            }
+            
+            if (membersList) {
+                membersList.innerHTML = '<div class="loading">Loading members...</div>';
+            }
+            
+            // Get members
+            const members = await groupChat.getGroupMembersWithDetails(groupId);
+            
+            if (membersList) {
+                membersList.innerHTML = '';
+                
+                if (members.length === 0) {
+                    membersList.innerHTML = '<div class="empty-state">No members in this group</div>';
+                } else {
+                    members.forEach(member => {
+                        const memberItem = document.createElement('div');
+                        memberItem.className = 'member-item';
+                        
+                        const isCurrentUser = member.id === groupChat.firebaseUser.uid;
+                        const isAdmin = member.isAdmin;
+                        
+                        memberItem.innerHTML = `
+                            <div class="member-info">
+                                <img src="${member.avatar || AVATAR_OPTIONS[0]}" 
+                                     alt="${member.name}" 
+                                     class="member-avatar">
+                                <div class="member-details">
+                                    <h4>
+                                        ${member.name}
+                                        ${isAdmin ? '<span class="admin-badge">Admin</span>' : ''}
+                                        ${isCurrentUser ? '<span class="you-badge">You</span>' : ''}
+                                    </h4>
+                                    <p class="member-email">${member.email || 'No email'}</p>
+                                    <small class="member-joined">
+                                        Joined: ${member.joinedAt ? 
+                                            new Date(member.joinedAt).toLocaleDateString('en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric'
+                                            }) : 'Unknown'}
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="member-actions">
+                                ${!isAdmin && !isCurrentUser ? `
+                                    <button class="remove-member-btn" 
+                                            onclick="confirmRemoveMember('${groupId}', '${member.id}', '${member.name.replace(/'/g, "\\'")}')">
+                                        <i class="fas fa-user-minus"></i> Remove
+                                    </button>
+                                ` : ''}
+                            </div>
+                        `;
+                        
+                        membersList.appendChild(memberItem);
+                    });
+                }
+            }
+            
+            // Show members section
+            if (groupsContainer && membersSection) {
+                groupsContainer.style.display = 'none';
+                membersSection.style.display = 'block';
+            }
+            
+            // Setup back button
+            const backToGroupsBtn = document.getElementById('backToGroupsBtn');
+            if (backToGroupsBtn) {
+                backToGroupsBtn.onclick = showGroupsSection;
+            }
+            
+        } catch (error) {
+            console.error('Error loading members:', error);
+            alert('Error loading members: ' + error.message);
+        }
+    };
+    
+    // Show groups section function
+    function showGroupsSection() {
+        const groupsContainer = document.getElementById('groupsContainer');
+        const membersSection = document.getElementById('membersSection');
+        
+        if (groupsContainer && membersSection) {
+            groupsContainer.style.display = 'block';
+            membersSection.style.display = 'none';
+        }
+    }
+    
+    // Confirm delete group function
+    window.confirmDeleteGroup = function(groupId, groupName) {
+        if (confirm(`Are you sure you want to delete the group "${groupName}"?\n\nThis action cannot be undone. All messages and member data will be permanently deleted.`)) {
+            deleteGroup(groupId, groupName);
+        }
+    };
+    
+    // Delete group function
+    async function deleteGroup(groupId, groupName) {
+        try {
+            if (!confirm(`Final warning: This will delete "${groupName}" permanently. Continue?`)) {
+                return;
+            }
+            
+            // Show loading
+            const originalText = event?.target?.innerHTML || 'Delete';
+            if (event?.target) {
+                event.target.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
+                event.target.disabled = true;
+            }
+            
+            await groupChat.deleteGroup(groupId);
+            
+            alert(`Group "${groupName}" has been deleted successfully.`);
+            
+            // Reload groups
+            loadAdminGroups();
+            
+        } catch (error) {
+            console.error('Error deleting group:', error);
+            alert('Error deleting group: ' + error.message);
+            
+            // Reset button
+            if (event?.target) {
+                event.target.innerHTML = originalText;
+                event.target.disabled = false;
+            }
+        }
+    }
+    
+    // Confirm remove member function
+    window.confirmRemoveMember = function(groupId, memberId, memberName) {
+        if (confirm(`Are you sure you want to remove "${memberName}" from this group?\n\nThey will be notified and will lose access to all group messages.`)) {
+            removeMember(groupId, memberId, memberName);
+        }
+    };
+    
+    // Remove member function
+    async function removeMember(groupId, memberId, memberName) {
+        try {
+            // Show loading
+            const originalText = event?.target?.innerHTML || 'Remove';
+            if (event?.target) {
+                event.target.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Removing...';
+                event.target.disabled = true;
+            }
+            
+            await groupChat.removeMemberFromGroup(groupId, memberId, memberName);
+            
+            alert(`"${memberName}" has been removed from the group.`);
+            
+            // Refresh members list
+            const groupName = document.getElementById('membersTitle')?.textContent.replace('Members of ', '') || '';
+            viewGroupMembers(groupId, groupName);
+            
+        } catch (error) {
+            console.error('Error removing member:', error);
+            alert('Error removing member: ' + error.message);
+            
+            // Reset button
+            if (event?.target) {
+                event.target.innerHTML = originalText;
+                event.target.disabled = false;
+            }
+        }
+    }
+}
+
+// Make groupChat available globally
 window.groupChat = groupChat;
 
 // Helper function for logout
