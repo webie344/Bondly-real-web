@@ -116,6 +116,9 @@ class StreamManager {
                 // Upload to Cloudinary
                 const videoUrl = await this.uploadVideoToCloudinary(videoData);
                 
+                // Generate thumbnail URL from Cloudinary video
+                const thumbnailUrl = this.generateCloudinaryThumbnail(videoUrl);
+                
                 streamData = {
                     videoType: 'cloudinary',
                     videoUrl: videoUrl,
@@ -138,7 +141,7 @@ class StreamManager {
                     isActive: true,
                     sortTimestamp: new Date().getTime(),
                     embedUrl: null,
-                    thumbnailUrl: 'images-defaultse-profile.jpg',
+                    thumbnailUrl: thumbnailUrl, // Store the thumbnail URL
                     isPhoneVideo: this.isLikelyPhoneVideo(videoData),
                     isPortraitVideo: await this.isPortraitVideo(videoData),
                     needsConversion: this.needsConversion(videoData)
@@ -152,6 +155,41 @@ class StreamManager {
             return streamRef.id;
         } catch (error) {
             throw error;
+        }
+    }
+
+    // Generate Cloudinary thumbnail URL from video URL
+    generateCloudinaryThumbnail(videoUrl) {
+        try {
+            if (!videoUrl || typeof videoUrl !== 'string') {
+                return 'images-defaultse-profile.jpg';
+            }
+
+            // Check if it's a Cloudinary URL
+            if (!videoUrl.includes('cloudinary.com')) {
+                return 'images-defaultse-profile.jpg';
+            }
+
+            // Cloudinary transformation for thumbnail
+            // w_400: width 400px, h_225: height 225px (16:9 aspect ratio)
+            // c_fill: crop to fill dimensions, q_auto: automatic quality
+            // f_jpg: output as JPEG format
+            if (videoUrl.includes('/upload/')) {
+                // For problematic videos, use different approach
+                if (videoUrl.includes('/upload/video/')) {
+                    // Already a video URL, convert to image
+                    return videoUrl.replace('/upload/video/', '/upload/w_400,h_225,c_fill,q_auto,f_jpg/')
+                                   .replace(/\.(mp4|mov|avi|mkv|webm)$/i, '.jpg');
+                } else {
+                    // Regular Cloudinary URL
+                    return videoUrl.replace('/upload/', '/upload/w_400,h_225,c_fill,q_auto,f_jpg/');
+                }
+            }
+            
+            return 'images-defaultse-profile.jpg';
+        } catch (error) {
+            console.error('Error generating thumbnail:', error);
+            return 'images-defaultse-profile.jpg';
         }
     }
 
@@ -336,15 +374,18 @@ class StreamManager {
             streamsSnap.forEach(doc => {
                 const data = doc.data();
                 if (data.isActive !== false) {
-                    streams.push({
+                    // Generate thumbnail URL if not already present
+                    const streamWithThumbnail = {
                         id: doc.id,
                         ...data,
+                        thumbnailUrl: this.getStreamThumbnail(data), // Use helper function
                         createdAt: data.createdAt || new Date(),
                         updatedAt: data.updatedAt || new Date(),
                         timestamp: data.createdAt?.toDate?.()?.getTime() || 
                                   data.sortTimestamp || 
                                   new Date().getTime()
-                    });
+                    };
+                    streams.push(streamWithThumbnail);
                 }
             });
 
@@ -363,6 +404,22 @@ class StreamManager {
         } catch (error) {
             return [];
         }
+    }
+
+    // Helper function to get thumbnail for a stream
+    getStreamThumbnail(streamData) {
+        // If thumbnail already exists in database, use it
+        if (streamData.thumbnailUrl && streamData.thumbnailUrl !== 'images-defaultse-profile.jpg') {
+            return streamData.thumbnailUrl;
+        }
+        
+        // If no thumbnail but we have a video URL, generate one
+        if (streamData.videoUrl && streamData.videoType === 'cloudinary') {
+            return this.generateCloudinaryThumbnail(streamData.videoUrl);
+        }
+        
+        // Fallback to default image
+        return 'images-defaultse-profile.jpg';
     }
 
     // Add viewer to stream
@@ -607,6 +664,7 @@ class StreamManager {
                         streams.push({
                             id: doc.id,
                             ...data,
+                            thumbnailUrl: this.getStreamThumbnail(data), // Generate thumbnail
                             timestamp: data.createdAt?.toDate?.()?.getTime() || 
                                       data.sortTimestamp || 
                                       new Date().getTime()
@@ -677,7 +735,7 @@ class StreamManager {
                 if (Date.now() - streamInfo.lastUpdate > 25000) {
                     this.updateViewerActivity(streamId);
                     streamInfo.lastUpdate = Date.now();
-                }
+            }
             });
         }, 30000);
 
@@ -1764,6 +1822,26 @@ function markStreamAsViewed(streamId) {
     saveViewedStreams();
 }
 
+// Get video thumbnail - FIXED VERSION
+function getVideoThumbnail(stream) {
+    if (!stream) {
+        return 'images-defaultse-profile.jpg';
+    }
+    
+    // Use the thumbnail URL if available
+    if (stream.thumbnailUrl && stream.thumbnailUrl !== 'images-defaultse-profile.jpg') {
+        return stream.thumbnailUrl;
+    }
+    
+    // If no thumbnail but we have a Cloudinary video URL, generate one
+    if (stream.videoType === 'cloudinary' && stream.videoUrl) {
+        return streamManager.generateCloudinaryThumbnail(stream.videoUrl);
+    }
+    
+    // Fallback to default image
+    return 'images-defaultse-profile.jpg';
+}
+
 // Auth state management
 function initializeAuth() {
     return new Promise((resolve) => {
@@ -2054,11 +2132,6 @@ function loadStreams(category) {
         });
 }
 
-// Get video thumbnail - ALWAYS returns default image
-function getVideoThumbnail(stream) {
-    return 'images-defaultse-profile.jpg';
-}
-
 // Render streams function with proper phone video handling
 function renderStreams(streams) {
     const streamsContainer = document.getElementById('streamsContainer');
@@ -2085,6 +2158,9 @@ function renderStreams(streams) {
         const isLiked = likedStreams.has(stream.id);
         const needsConversion = stream.needsConversion;
         
+        // Get the thumbnail URL - THIS IS THE KEY FIX
+        const thumbnailUrl = getVideoThumbnail(stream);
+        
         // Determine the appropriate CSS class for the video preview
         let videoPreviewClass = 'video-preview-container';
         if (isPhoneVideo && isPortraitVideo) {
@@ -2099,9 +2175,10 @@ function renderStreams(streams) {
         return `
         <div class="stream-card" data-stream-id="${stream.id}">
             <div class="${videoPreviewClass}" onclick="playStream('${stream.id}')">
-                <img src="images-defaultse-profile.jpg" 
+                <img src="${thumbnailUrl}" 
                      alt="${stream.headline}" 
-                     class="video-preview">
+                     class="video-preview"
+                     onerror="this.src='images-defaultse-profile.jpg'">
                 <div class="video-preview-overlay">
                     <button class="preview-play-button">
                         <i class="fas fa-play"></i>
@@ -2304,3 +2381,4 @@ window.playStream = playStream;
 window.videoPlayer = videoPlayer;
 window.toggleStreamComments = toggleStreamComments;
 window.handleAddComment = handleAddComment;
+window.getVideoThumbnail = getVideoThumbnail;
