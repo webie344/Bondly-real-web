@@ -185,7 +185,7 @@ class GroupChat {
             
             // Generate new invite code and link
             const inviteCode = this.generateInviteCode();
-            const inviteLink = `https://bondlydating.vercel.app/join.html?code=${inviteCode}`;
+            const inviteLink = `https://bondlydatingweb.vercel.app//join.html?code=${inviteCode}`;
             
             // Update group with invite code
             await updateDoc(groupRef, {
