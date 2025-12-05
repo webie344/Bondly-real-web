@@ -150,7 +150,7 @@ class GroupChat {
 
             // Generate new invite code
             const newInviteCode = this.generateInviteCode();
-            const newInviteLink = `https://bondlydatingweb.vercel.app//join.html?code=${newInviteCode}`;
+            const newInviteLink = `https://bondlydatingweb.vercel.app/join.html?code=${newInviteCode}`;
 
             // Update group with new invite code
             await updateDoc(groupRef, {
@@ -185,7 +185,7 @@ class GroupChat {
             
             // Generate new invite code and link
             const inviteCode = this.generateInviteCode();
-            const inviteLink = `https://bondlydatingweb.vercel.app//join.html?code=${inviteCode}`;
+            const inviteLink = `https://bondlydatingweb.vercel.app/join.html?code=${inviteCode}`;
             
             // Update group with invite code
             await updateDoc(groupRef, {
@@ -491,7 +491,7 @@ class GroupChat {
                 console.log('User logged out');
                 
                 // Redirect to login if on protected page
-                const protectedPages = ['create-group', 'group', 'admin-groups', 'join'];
+                const protectedPages = ['create-group', 'group', 'admin-groups'];
                 const currentPage = window.location.pathname.split('/').pop().split('.')[0];
                 
                 if (protectedPages.includes(currentPage)) {
@@ -662,7 +662,7 @@ class GroupChat {
             
             // Generate invite code
             const inviteCode = this.generateInviteCode();
-            const inviteLink = `https://bondlydating.vercel.app/join.html?code=${inviteCode}`;
+            const inviteLink = `https://bondlydatingweb.vercel.app/join.html?code=${inviteCode}`;
             
             const group = {
                 id: groupRef.id,
@@ -1656,12 +1656,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             default:
                 // For pages that don't need auth check
-                if (currentPage === 'login' || currentPage === 'signup') {
+                if (currentPage === 'login' || currentPage === 'signup' || currentPage === 'index') {
                     // These pages handle their own initialization
                 } else {
                     // Other pages wait for auth
                     setTimeout(() => {
-                        if (!groupChat.firebaseUser && currentPage !== 'login' && currentPage !== 'signup') {
+                        if (!groupChat.firebaseUser && currentPage !== 'login' && currentPage !== 'signup' && currentPage !== 'index') {
                             window.location.href = 'login.html';
                         }
                     }, 1000);
@@ -2236,7 +2236,7 @@ function initSetPage() {
             joinBtn.disabled = false;
             joinBtn.textContent = 'Save Profile';
         }
-    })
+    });
     
     // Cancel button
     cancelBtn.addEventListener('click', () => {
@@ -3446,6 +3446,7 @@ function initJoinPage() {
     const groupInfo = document.getElementById('groupInfo');
     const joinBtn = document.getElementById('joinBtn');
     const backBtn = document.getElementById('backBtn');
+    const loginPrompt = document.getElementById('loginPrompt');
     
     const urlParams = new URLSearchParams(window.location.search);
     const inviteCode = urlParams.get('code');
@@ -3456,21 +3457,13 @@ function initJoinPage() {
         return;
     }
     
-    // Check if user is logged in
-    if (!groupChat.firebaseUser) {
-        // Store invite code in sessionStorage and redirect to login
-        sessionStorage.setItem('pendingInviteCode', inviteCode);
-        window.location.href = `login.html?redirect=join.html?code=${inviteCode}`;
-        return;
-    }
-    
-    // Load group by invite code
+    // Load group by invite code (no auth required to view)
     loadGroupByInviteCode(inviteCode);
     
     // Back button
     if (backBtn) {
         backBtn.addEventListener('click', () => {
-            window.location.href = 'groups.html';
+            window.location.href = 'index.html';
         });
     }
     
@@ -3480,7 +3473,7 @@ function initJoinPage() {
             // Show loading
             groupInfo.innerHTML = '<div class="loading">Loading group information...</div>';
             
-            // Get group by invite code
+            // Get group by invite code (this doesn't require auth)
             const group = await groupChat.getGroupByInviteCode(inviteCode);
             
             if (!group) {
@@ -3488,55 +3481,30 @@ function initJoinPage() {
                 return;
             }
             
-            // Check if user is already a member
-            const isMember = await groupChat.isMember(group.id);
-            
-            if (isMember) {
-                groupInfo.innerHTML = `
-                    <div class="group-card">
-                        <h3>${group.name}</h3>
-                        <p>${group.description}</p>
-                        <div class="group-details">
-                            <p><strong>Members:</strong> ${group.memberCount || 0}/${group.maxMembers || 50}</p>
-                            <p><strong>Created by:</strong> ${group.creatorName}</p>
-                        </div>
-                        <div class="already-member">
-                            <p>You're already a member of this group!</p>
-                        </div>
-                    </div>
-                `;
-                
-                if (joinBtn) {
-                    joinBtn.textContent = 'Go to Group Chat';
-                    joinBtn.onclick = () => {
-                        window.location.href = `group.html?id=${group.id}`;
-                    };
-                }
-                return;
-            }
-            
-            // Check if group is full
-            if (group.memberCount >= group.maxMembers) {
-                showError('This group is full and cannot accept new members.');
-                return;
-            }
+            // Generate group avatar
+            const groupAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(group.name)}&backgroundColor=00897b&backgroundType=gradientLinear`;
             
             // Show group info
             groupInfo.innerHTML = `
                 <div class="group-card">
-                    <h3>${group.name}</h3>
-                    <p>${group.description}</p>
+                    <div class="group-avatar-section">
+                        <img src="${groupAvatar}" alt="${group.name}" class="group-avatar-large">
+                        <div class="group-title-section">
+                            <h3 class="group-name">${group.name}</h3>
+                            <span class="group-category">${group.category || 'General'}</span>
+                        </div>
+                    </div>
+                    <p class="group-description">${group.description}</p>
                     <div class="group-details">
-                        <p><strong>Category:</strong> ${group.category || 'General'}</p>
-                        <p><strong>Members:</strong> ${group.memberCount || 0}/${group.maxMembers || 50}</p>
-                        <p><strong>Created by:</strong> ${group.creatorName}</p>
-                        <p><strong>Privacy:</strong> ${group.privacy === 'private' ? 'Private' : 'Public'}</p>
+                        <p><i class="fas fa-users"></i> <strong>Members:</strong> ${group.memberCount || 0}/${group.maxMembers || 50}</p>
+                        <p><i class="fas fa-user"></i> <strong>Created by:</strong> ${group.creatorName}</p>
+                        <p><i class="fas ${group.privacy === 'private' ? 'fa-lock' : 'fa-globe'}"></i> <strong>Privacy:</strong> ${group.privacy === 'private' ? 'Private' : 'Public'}</p>
                     </div>
                     ${group.topics && group.topics.length > 0 ? `
                         <div class="group-topics">
-                            <h4>Discussion Topics</h4>
+                            <h4><i class="fas fa-comments"></i> Discussion Topics</h4>
                             <div class="topics-list">
-                                ${group.topics.slice(0, 3).map(topic => 
+                                ${group.topics.slice(0, 5).map(topic => 
                                     `<span class="topic-tag">${topic}</span>`
                                 ).join('')}
                             </div>
@@ -3547,9 +3515,31 @@ function initJoinPage() {
             
             // Setup join button
             if (joinBtn) {
-                joinBtn.onclick = async () => {
-                    await joinGroup(group.id);
-                };
+                // Check if user is logged in
+                if (groupChat.firebaseUser) {
+                    // User is logged in, check if already a member
+                    groupChat.isMember(group.id).then(isMember => {
+                        if (isMember) {
+                            joinBtn.innerHTML = '<i class="fas fa-comments"></i> Enter Group Chat';
+                            joinBtn.onclick = () => {
+                                window.location.href = `group.html?id=${group.id}`;
+                            };
+                        } else {
+                            joinBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Join Group';
+                            joinBtn.onclick = async () => {
+                                await joinGroup(group.id);
+                            };
+                        }
+                    });
+                } else {
+                    // User is not logged in
+                    joinBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login to Join';
+                    joinBtn.onclick = () => {
+                        // Store invite code and redirect to login
+                        sessionStorage.setItem('pendingInviteCode', inviteCode);
+                        window.location.href = `login.html?redirect=join.html?code=${inviteCode}`;
+                    };
+                }
             }
             
             // Add styles for join page
@@ -3559,82 +3549,148 @@ function initJoinPage() {
                 styles.textContent = `
                     .group-card {
                         background: white;
-                        border-radius: 12px;
-                        padding: 20px;
-                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                        border-radius: 16px;
+                        padding: 25px;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+                        margin-bottom: 25px;
+                    }
+                    
+                    .group-avatar-section {
+                        display: flex;
+                        align-items: center;
+                        gap: 15px;
                         margin-bottom: 20px;
                     }
                     
-                    .group-card h3 {
-                        margin: 0 0 10px 0;
-                        color: #333;
+                    .group-avatar-large {
+                        width: 80px;
+                        height: 80px;
+                        border-radius: 50%;
+                        border: 4px solid #667eea;
                     }
                     
-                    .group-card p {
-                        margin: 0 0 10px 0;
+                    .group-title-section h3 {
+                        margin: 0;
+                        color: #333;
+                        font-size: 24px;
+                    }
+                    
+                    .group-category {
+                        background: #e0f7fa;
+                        color: #00796b;
+                        padding: 4px 12px;
+                        border-radius: 20px;
+                        font-size: 14px;
+                        font-weight: 500;
+                    }
+                    
+                    .group-description {
                         color: #666;
-                        line-height: 1.5;
+                        line-height: 1.6;
+                        margin: 15px 0;
+                        font-size: 16px;
                     }
                     
                     .group-details {
                         background: #f8f9fa;
-                        border-radius: 8px;
-                        padding: 15px;
-                        margin: 15px 0;
+                        border-radius: 12px;
+                        padding: 20px;
+                        margin: 20px 0;
                     }
                     
                     .group-details p {
-                        margin: 5px 0;
+                        margin: 8px 0;
+                        color: #555;
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
                     }
                     
-                    .already-member {
-                        background: #e3f2fd;
-                        border-radius: 8px;
-                        padding: 15px;
-                        margin-top: 15px;
-                        text-align: center;
+                    .group-details i {
+                        color: #667eea;
+                        width: 20px;
                     }
                     
                     .group-topics {
-                        margin-top: 15px;
+                        margin-top: 20px;
                     }
                     
                     .group-topics h4 {
-                        margin: 0 0 10px 0;
+                        margin: 0 0 15px 0;
                         color: #444;
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
                     }
                     
                     .topics-list {
                         display: flex;
                         flex-wrap: wrap;
-                        gap: 8px;
+                        gap: 10px;
                     }
                     
                     .topic-tag {
-                        background: #e0f7fa;
-                        color: #00796b;
-                        padding: 4px 8px;
-                        border-radius: 4px;
-                        font-size: 12px;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        padding: 8px 16px;
+                        border-radius: 20px;
+                        font-size: 14px;
+                        font-weight: 500;
                     }
                     
                     .loading {
                         text-align: center;
                         padding: 40px;
                         color: #666;
+                        font-size: 18px;
                     }
                     
                     .error-message {
                         background: #ffebee;
-                        border-radius: 8px;
-                        padding: 20px;
+                        border-radius: 12px;
+                        padding: 25px;
                         text-align: center;
-                        margin-bottom: 20px;
+                        margin-bottom: 25px;
                     }
                     
                     .error-message h3 {
                         color: #c62828;
-                        margin: 0 0 10px 0;
+                        margin: 0 0 15px 0;
+                        font-size: 20px;
+                    }
+                    
+                    .error-message p {
+                        color: #666;
+                        margin: 0;
+                    }
+                    
+                    .join-btn {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        border: none;
+                        padding: 15px 30px;
+                        border-radius: 25px;
+                        font-size: 16px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        width: 100%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 10px;
+                        transition: all 0.3s ease;
+                        margin-top: 20px;
+                    }
+                    
+                    .join-btn:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+                    }
+                    
+                    .join-btn:disabled {
+                        opacity: 0.7;
+                        cursor: not-allowed;
+                        transform: none !important;
                     }
                 `;
                 document.head.appendChild(styles);
@@ -3649,6 +3705,13 @@ function initJoinPage() {
     // Join group function
     async function joinGroup(groupId) {
         try {
+            // Check if user is logged in
+            if (!groupChat.firebaseUser) {
+                alert('Please login to join the group');
+                window.location.href = 'login.html';
+                return;
+            }
+            
             // Check if user needs profile setup
             if (groupChat.needsProfileSetup()) {
                 window.location.href = `set.html?id=${groupId}`;
@@ -3677,7 +3740,7 @@ function initJoinPage() {
             // Re-enable join button
             if (joinBtn) {
                 joinBtn.disabled = false;
-                joinBtn.textContent = 'Join Group';
+                joinBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Join Group';
             }
         }
     }
