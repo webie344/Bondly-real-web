@@ -30,8 +30,29 @@
     padding: 0;
     box-sizing: border-box;
 }
-/* ===== FIX FOR VIDEO MESSAGE BACKGROUNDS ===== */
+/* ===== SCROLLING FIXES ===== */
 
+/* ===== FIX FOR VIDEO MESSA
+GE BACKGROUNDS ===== */
+/* ADD THIS AT THE END OF YOUR EXISTING CSS FILE */
+
+/* Fix for smooth scrolling and message persistence */
+#chatMessages, .chat-messages {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: auto;
+    transform: translateZ(0);
+}
+
+.message {
+    contain: layout;
+    will-change: transform;
+    min-height: px;
+}
+
+.message-content {
+    position: relative;
+    z-index: 1;
+}
 /* Remove background from ALL message containers that contain videos */
 .message:has(.video-message),
 .message:has(.video-message) .message-content,

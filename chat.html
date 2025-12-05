@@ -219,14 +219,20 @@
         color: var(--text-secondary);
     }
     
-    /* REACTION PICKER - BOTTOM SHEET STYLE (Like the screenshot) */
-    /* This is the ONLY change needed - make it a bottom sheet */
-    .reaction-picker {
+    /* HIDE REACTION PICKER ON ALL PAGES EXCEPT CHAT */
+    /* This will hide it by default on all pages */
+    #reactionPicker {
+        display: none !important;
+    }
+    
+    /* SHOW IT ONLY ON CHAT PAGE */
+    /* When body has chat-page class, show it as bottom sheet */
+    body.chat-page #reactionPicker {
+        display: none !important; /* Start hidden */
         position: fixed !important;
         bottom: 0 !important;
         left: 0 !important;
         right: 0 !important;
-        top: auto !important;
         background: var(--bg-primary) !important;
         border-radius: 20px 20px 0 0 !important;
         padding: 20px 15px 30px !important;
@@ -238,20 +244,20 @@
         transform: translateY(100%) !important;
         transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
         pointer-events: none !important;
-        display: none !important;
         flex-wrap: wrap !important;
         justify-content: center !important;
         gap: 15px !important;
     }
 
-    .reaction-picker[style*="display: flex"] {
+    /* When it's shown with display: flex */
+    body.chat-page #reactionPicker[style*="display: flex"] {
         transform: translateY(0) !important;
         pointer-events: auto !important;
         display: flex !important;
     }
 
     /* Add overlay when reaction picker is visible */
-    .reaction-picker::before {
+    body.chat-page #reactionPicker::before {
         content: '';
         position: fixed;
         top: 0;
@@ -263,11 +269,11 @@
         display: none;
     }
 
-    .reaction-picker[style*="display: flex"]::before {
+    body.chat-page #reactionPicker[style*="display: flex"]::before {
         display: block;
     }
 
-    .reaction-emoji {
+    body.chat-page #reactionPicker .reaction-emoji {
         font-size: 32px !important;
         cursor: pointer;
         transition: all 0.2s ease;
@@ -282,19 +288,19 @@
         background: rgba(255, 255, 255, 0.05);
     }
     
-    .reaction-emoji:hover {
+    body.chat-page #reactionPicker .reaction-emoji:hover {
         transform: scale(1.2);
         background: rgba(255, 255, 255, 0.1);
     }
     
-    /* Mobile responsiveness */
+    /* Mobile responsiveness for chat page only */
     @media (max-width: 768px) {
-        .reaction-picker {
+        body.chat-page #reactionPicker {
             padding: 15px 12px 25px !important;
             gap: 12px !important;
         }
         
-        .reaction-emoji {
+        body.chat-page #reactionPicker .reaction-emoji {
             font-size: 28px !important;
             min-width: 45px !important;
             min-height: 45px !important;
@@ -303,13 +309,13 @@
     }
     
     @media (max-width: 480px) {
-        .reaction-picker {
+        body.chat-page #reactionPicker {
             padding: 12px 10px 20px !important;
             border-radius: 15px 15px 0 0 !important;
             gap: 10px !important;
         }
         
-        .reaction-emoji {
+        body.chat-page #reactionPicker .reaction-emoji {
             font-size: 26px !important;
             min-width: 40px !important;
             min-height: 40px !important;
@@ -534,11 +540,8 @@
             <!-- Messages will be loaded here -->
         </div>
         
-        <!-- Reaction Picker - This is the EXISTING element from your original code -->
-        <!-- Your app.js will populate this with emojis -->
-        <div id="reactionPicker" class="reaction-picker" style="display: none;">
-            <!-- Will be populated with emojis via JavaScript from app.js -->
-        </div>
+        <!-- Reaction Picker will be created by app.js -->
+        <!-- It will be hidden on all pages by default CSS -->
         
         <div class="chat-input-container">
             <div class="typing-indicator" id="typingIndicator" style="display: none;">
@@ -593,10 +596,13 @@
     <script type="module" src="game.js"></script>
     <script type="module" src="additional.js"></script>
 
-    <!-- SIMPLE FIX: Add a tiny script to make the reaction picker close when clicking outside -->
+    <!-- SIMPLE FIX: Add chat-page class to body and handle reaction picker -->
     <script>
     // This simple script just adds click-to-close functionality
     document.addEventListener('DOMContentLoaded', function() {
+        // Add chat-page class to body so our CSS only applies here
+        document.body.classList.add('chat-page');
+        
         // When reaction picker is shown, add overlay click handler
         const observer = new MutationObserver(function(mutations) {
             mutations.forEach(function(mutation) {
