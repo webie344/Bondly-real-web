@@ -1,4 +1,4 @@
-// group.js - Complete Group Chat System with Cloudinary Image Support - REPLY ONLY VERSION
+// group.js - Complete Group Chat System with Cloudinary Image Support & Invite Links
 
 import { 
     getFirestore, 
@@ -90,6 +90,115 @@ class GroupChat {
         
         this.setupAuthListener();
         this.createMessageContextMenu();
+    }
+
+    // ==================== INVITE LINK FUNCTIONS ====================
+
+    // Generate unique invite code
+    generateInviteCode() {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let code = '';
+        for (let i = 0; i < 8; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return code;
+    }
+
+    // Look up group by invite code
+    async getGroupByInviteCode(inviteCode) {
+        try {
+            const groupsRef = collection(db, 'groups');
+            const q = query(groupsRef, where('inviteCode', '==', inviteCode));
+            const querySnapshot = await getDocs(q);
+            
+            if (!querySnapshot.empty) {
+                const doc = querySnapshot.docs[0];
+                const data = doc.data();
+                return { 
+                    id: doc.id, 
+                    ...data,
+                    createdAt: data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate() : data.createdAt) : new Date(),
+                    updatedAt: data.updatedAt ? (data.updatedAt.toDate ? data.updatedAt.toDate() : data.updatedAt) : new Date()
+                };
+            }
+            return null;
+        } catch (error) {
+            console.error('Error getting group by invite code:', error);
+            throw error;
+        }
+    }
+
+    // Generate new invite code for existing group
+    async regenerateInviteCode(groupId) {
+        try {
+            if (!this.firebaseUser) {
+                throw new Error('You must be logged in to regenerate invite code');
+            }
+
+            // Verify current user is admin of this group
+            const groupRef = doc(db, 'groups', groupId);
+            const groupSnap = await getDoc(groupRef);
+            
+            if (!groupSnap.exists()) {
+                throw new Error('Group not found');
+            }
+
+            const groupData = groupSnap.data();
+            if (groupData.createdBy !== this.firebaseUser.uid) {
+                throw new Error('Only group admin can regenerate invite code');
+            }
+
+            // Generate new invite code
+            const newInviteCode = this.generateInviteCode();
+            const newInviteLink = `https://bondlydatingweb.vercel.app//join.html?code=${newInviteCode}`;
+
+            // Update group with new invite code
+            await updateDoc(groupRef, {
+                inviteCode: newInviteCode,
+                inviteLink: newInviteLink,
+                updatedAt: serverTimestamp()
+            });
+
+            return newInviteLink;
+        } catch (error) {
+            console.error('Error regenerating invite code:', error);
+            throw error;
+        }
+    }
+
+    // Get group invite link (create if doesn't exist)
+    async getGroupInviteLink(groupId) {
+        try {
+            const groupRef = doc(db, 'groups', groupId);
+            const groupSnap = await getDoc(groupRef);
+            
+            if (!groupSnap.exists()) {
+                throw new Error('Group not found');
+            }
+
+            const groupData = groupSnap.data();
+            
+            // If group already has invite code, return existing link
+            if (groupData.inviteCode && groupData.inviteLink) {
+                return groupData.inviteLink;
+            }
+            
+            // Generate new invite code and link
+            const inviteCode = this.generateInviteCode();
+            const inviteLink = `https://bondlydating.vercel.app/join.html?code=${inviteCode}`;
+            
+            // Update group with invite code
+            await updateDoc(groupRef, {
+                inviteCode: inviteCode,
+                inviteLink: inviteLink,
+                updatedAt: serverTimestamp()
+            });
+
+            return inviteLink;
+        } catch (error) {
+            console.error('Error getting invite link:', error);
+            throw error;
+        }
     }
 
     // ==================== NEW ADMIN FUNCTIONS ====================
@@ -362,7 +471,7 @@ class GroupChat {
         }
     }
 
-    // ==================== EXISTING FUNCTIONS ====================
+    // ==================== EXISTING FUNCTIONS (UPDATED) ====================
 
     // Setup Firebase auth listener
     setupAuthListener() {
@@ -382,7 +491,7 @@ class GroupChat {
                 console.log('User logged out');
                 
                 // Redirect to login if on protected page
-                const protectedPages = ['create-group', 'group', 'admin-groups'];
+                const protectedPages = ['create-group', 'group', 'admin-groups', 'join'];
                 const currentPage = window.location.pathname.split('/').pop().split('.')[0];
                 
                 if (protectedPages.includes(currentPage)) {
@@ -542,7 +651,7 @@ class GroupChat {
                !this.currentUser?.avatar;
     }
 
-    // Create a new group
+    // Create a new group (UPDATED WITH INVITE CODE)
     async createGroup(groupData) {
         try {
             if (!this.firebaseUser || !this.currentUser) {
@@ -550,6 +659,10 @@ class GroupChat {
             }
             
             const groupRef = doc(collection(db, 'groups'));
+            
+            // Generate invite code
+            const inviteCode = this.generateInviteCode();
+            const inviteLink = `https://bondlydating.vercel.app/join.html?code=${inviteCode}`;
             
             const group = {
                 id: groupRef.id,
@@ -564,6 +677,8 @@ class GroupChat {
                 creatorName: this.currentUser.name,
                 creatorAvatar: this.currentUser.avatar,
                 memberCount: 1,
+                inviteCode: inviteCode,
+                inviteLink: inviteLink,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 lastActivity: serverTimestamp()
@@ -577,7 +692,7 @@ class GroupChat {
             // Add to joined groups
             this.addJoinedGroup(groupRef.id);
             
-            return groupRef.id;
+            return { groupId: groupRef.id, inviteLink: inviteLink };
         } catch (error) {
             console.error('Error creating group:', error);
             throw error;
@@ -704,6 +819,27 @@ class GroupChat {
         } catch (error) {
             console.error('Error checking membership:', error);
             return false;
+        }
+    }
+
+    // Join a group via invite code
+    async joinGroupByInviteCode(inviteCode) {
+        try {
+            if (!this.firebaseUser || !this.currentUser) {
+                throw new Error('You must be logged in to join a group');
+            }
+            
+            // Get group by invite code
+            const group = await this.getGroupByInviteCode(inviteCode);
+            
+            if (!group) {
+                throw new Error('Invalid or expired invite link');
+            }
+            
+            return await this.joinGroup(group.id);
+        } catch (error) {
+            console.error('Error joining group by invite code:', error);
+            throw error;
         }
     }
 
@@ -1515,6 +1651,9 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'admin-groups':
                 initAdminGroupsPage();
                 break;
+            case 'join':
+                initJoinPage();
+                break;
             default:
                 // For pages that don't need auth check
                 if (currentPage === 'login' || currentPage === 'signup') {
@@ -1538,7 +1677,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 500);
 });
 
-// Initialize Create Group Page
+// ==================== CREATE GROUP PAGE INITIALIZATION ====================
+
 function initCreateGroupPage() {
     // Check auth
     if (!groupChat.firebaseUser) {
@@ -1732,11 +1872,15 @@ function initCreateGroupPage() {
         createBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
         
         try {
-            // Create group
-            const groupId = await groupChat.createGroup(groupData);
+            // Create group (returns both groupId and inviteLink)
+            const result = await groupChat.createGroup(groupData);
             
-            alert('Group created successfully!');
-            window.location.href = `group.html?id=${groupId}`;
+            alert(`Group created successfully!\n\nInvite Link: ${result.inviteLink}\n\nThis link has been copied to your clipboard.`);
+            
+            // Copy invite link to clipboard
+            navigator.clipboard.writeText(result.inviteLink);
+            
+            window.location.href = `group.html?id=${result.groupId}`;
         } catch (error) {
             console.error('Error creating group:', error);
             alert('Failed to create group. Please try again.');
@@ -1755,7 +1899,8 @@ function initCreateGroupPage() {
     renderRules();
 }
 
-// Initialize Groups Page
+// ==================== GROUPS PAGE INITIALIZATION ====================
+
 function initGroupsPage() {
     const groupsGrid = document.getElementById('groupsGrid');
     const createGroupBtn = document.getElementById('createGroupBtn');
@@ -1940,7 +2085,8 @@ function initGroupsPage() {
     }
 }
 
-// Initialize Set Page (for profile setup)
+// ==================== SET PAGE INITIALIZATION ====================
+
 function initSetPage() {
     const form = document.getElementById('setupForm');
     const avatarPreview = document.getElementById('avatarPreview');
@@ -2090,7 +2236,7 @@ function initSetPage() {
             joinBtn.disabled = false;
             joinBtn.textContent = 'Save Profile';
         }
-    });
+    })
     
     // Cancel button
     cancelBtn.addEventListener('click', () => {
@@ -2119,7 +2265,8 @@ function initSetPage() {
     }
 }
 
-// Initialize Group Chat Page with Image Support and Reply Functionality ONLY
+// ==================== GROUP CHAT PAGE INITIALIZATION ====================
+
 function initGroupPage() {
     const sidebar = document.getElementById('sidebar');
     const backBtn = document.getElementById('backBtn');
@@ -2332,6 +2479,9 @@ function initGroupPage() {
                 rulesList.appendChild(li);
             });
             
+            // Add invite link button if user is admin
+            addInviteLinkButton();
+            
             // Load initial members
             members = await groupChat.getGroupMembers(groupId);
             updateMembersList();
@@ -2346,6 +2496,194 @@ function initGroupPage() {
         } catch (error) {
             console.error('Error loading group data:', error);
             alert('Error loading group data. Please try again.');
+        }
+    }
+    
+    // Add invite link button to sidebar
+    function addInviteLinkButton() {
+        // Check if user is admin
+        if (!groupData || groupData.createdBy !== groupChat.firebaseUser.uid) {
+            return;
+        }
+        
+        // Create invite link container if it doesn't exist
+        let inviteContainer = document.getElementById('inviteLinkContainer');
+        if (!inviteContainer) {
+            inviteContainer = document.createElement('div');
+            inviteContainer.id = 'inviteLinkContainer';
+            inviteContainer.className = 'invite-link-container';
+            
+            const copyBtn = document.createElement('button');
+            copyBtn.id = 'copyInviteBtn';
+            copyBtn.className = 'copy-invite-btn';
+            copyBtn.innerHTML = '<i class="fas fa-link"></i> Copy Invite Link';
+            
+            const statusDiv = document.createElement('div');
+            statusDiv.id = 'inviteLinkStatus';
+            statusDiv.className = 'invite-link-status';
+            
+            inviteContainer.appendChild(copyBtn);
+            inviteContainer.appendChild(statusDiv);
+            
+            // Add to sidebar (after group description)
+            const sidebarContent = document.querySelector('.sidebar-content');
+            if (sidebarContent) {
+                const groupInfoSection = sidebarContent.querySelector('.group-info');
+                if (groupInfoSection) {
+                    groupInfoSection.appendChild(inviteContainer);
+                } else {
+                    sidebarContent.insertBefore(inviteContainer, sidebarContent.firstChild);
+                }
+            }
+            
+            // Add CSS styles if not already added
+            if (!document.getElementById('invite-btn-styles')) {
+                const styles = document.createElement('style');
+                styles.id = 'invite-btn-styles';
+                styles.textContent = `
+                    .invite-link-container {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        border-radius: 12px;
+                        padding: 15px;
+                        margin: 15px 0;
+                        text-align: center;
+                    }
+                    
+                    .copy-invite-btn {
+                        background: white;
+                        color: #667eea;
+                        border: none;
+                        padding: 12px 20px;
+                        border-radius: 25px;
+                        font-size: 14px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 8px;
+                        width: 100%;
+                        transition: all 0.3s ease;
+                        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+                    }
+                    
+                    .copy-invite-btn:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+                    }
+                    
+                    .copy-invite-btn:active {
+                        transform: translateY(0);
+                    }
+                    
+                    .copy-invite-btn:disabled {
+                        opacity: 0.7;
+                        cursor: not-allowed;
+                        transform: none !important;
+                    }
+                    
+                    .copy-invite-btn.copied {
+                        background: #4CAF50;
+                        color: white;
+                    }
+                    
+                    .copy-invite-btn.copied i {
+                        animation: bounce 0.5s ease;
+                    }
+                    
+                    .invite-link-status {
+                        margin-top: 10px;
+                        font-size: 12px;
+                        color: rgba(255, 255, 255, 0.9);
+                        min-height: 18px;
+                    }
+                    
+                    .invite-link-status.success {
+                        color: #4CAF50;
+                    }
+                    
+                    .invite-link-status.error {
+                        color: #ff6b6b;
+                    }
+                    
+                    @keyframes bounce {
+                        0%, 100% { transform: translateY(0); }
+                        50% { transform: translateY(-5px); }
+                    }
+                `;
+                document.head.appendChild(styles);
+            }
+            
+            // Add event listener
+            copyBtn.addEventListener('click', async () => {
+                let isCopying = false;
+                
+                if (isCopying) return;
+                
+                isCopying = true;
+                copyBtn.disabled = true;
+                copyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Getting link...';
+                statusDiv.textContent = '';
+                statusDiv.className = 'invite-link-status';
+                
+                try {
+                    // Get the invite link
+                    const inviteLink = await groupChat.getGroupInviteLink(groupId);
+                    
+                    // Copy to clipboard
+                    await navigator.clipboard.writeText(inviteLink);
+                    
+                    // Update button to show success
+                    copyBtn.innerHTML = '<i class="fas fa-check"></i> Link Copied!';
+                    copyBtn.classList.add('copied');
+                    
+                    // Show success message
+                    statusDiv.textContent = 'Invite link copied to clipboard!';
+                    statusDiv.classList.add('success');
+                    
+                    // Tooltip for extra info
+                    copyBtn.title = `Link: ${inviteLink}`;
+                    
+                    // Reset button after 3 seconds
+                    setTimeout(() => {
+                        copyBtn.innerHTML = '<i class="fas fa-link"></i> Copy Invite Link';
+                        copyBtn.classList.remove('copied');
+                        copyBtn.disabled = false;
+                        statusDiv.textContent = 'Share this link to invite others';
+                        statusDiv.className = 'invite-link-status';
+                        isCopying = false;
+                    }, 3000);
+                    
+                } catch (error) {
+                    console.error('Error copying invite link:', error);
+                    
+                    // Show error
+                    copyBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error';
+                    copyBtn.disabled = false;
+                    
+                    statusDiv.textContent = 'Failed to copy link. Please try again.';
+                    statusDiv.classList.add('error');
+                    
+                    // Reset button after 3 seconds
+                    setTimeout(() => {
+                        copyBtn.innerHTML = '<i class="fas fa-link"></i> Copy Invite Link';
+                        statusDiv.textContent = '';
+                        statusDiv.className = 'invite-link-status';
+                        isCopying = false;
+                    }, 3000);
+                }
+            });
+            
+            // Add keyboard shortcut (Ctrl/Cmd + Shift + L)
+            document.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'L') {
+                    e.preventDefault();
+                    copyBtn.click();
+                }
+            });
+            
+            // Add tooltip with keyboard shortcut info
+            copyBtn.title = 'Click to copy invite link (Ctrl+Shift+L)';
         }
     }
     
@@ -2846,6 +3184,9 @@ function initAdminGroupsPage() {
                         <button class="view-group-btn" onclick="window.location.href='group.html?id=${group.id}'">
                             <i class="fas fa-comments"></i> View Chat
                         </button>
+                        <button class="invite-link-admin-btn" onclick="copyGroupInviteLink('${group.id}')">
+                            <i class="fas fa-link"></i> Copy Invite
+                        </button>
                         <button class="manage-members-btn" onclick="viewGroupMembers('${group.id}', '${group.name.replace(/'/g, "\\'")}')">
                             <i class="fas fa-users"></i> Manage Members
                         </button>
@@ -2858,7 +3199,68 @@ function initAdminGroupsPage() {
             
             groupsList.appendChild(groupCard);
         });
+        
+        // Add styles for admin buttons
+        if (!document.getElementById('admin-btn-styles')) {
+            const styles = document.createElement('style');
+            styles.id = 'admin-btn-styles';
+            styles.textContent = `
+                .invite-link-admin-btn {
+                    background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
+                    color: white;
+                    border: none;
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 14px;
+                }
+                
+                .invite-link-admin-btn:hover {
+                    opacity: 0.9;
+                }
+            `;
+            document.head.appendChild(styles);
+        }
     }
+    
+    // Copy group invite link function
+    window.copyGroupInviteLink = async function(groupId) {
+        try {
+            // Show loading
+            const originalText = event?.target?.innerHTML || 'Copy Invite';
+            if (event?.target) {
+                event.target.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                event.target.disabled = true;
+            }
+            
+            const inviteLink = await groupChat.getGroupInviteLink(groupId);
+            
+            // Copy to clipboard
+            navigator.clipboard.writeText(inviteLink);
+            
+            // Show success message
+            alert('Invite link copied to clipboard!\n\nShare this link to invite others to join your group.');
+            
+            // Reset button
+            if (event?.target) {
+                event.target.innerHTML = originalText;
+                event.target.disabled = false;
+            }
+            
+        } catch (error) {
+            console.error('Error copying invite link:', error);
+            alert('Error getting invite link: ' + error.message);
+            
+            // Reset button
+            if (event?.target) {
+                event.target.innerHTML = originalText;
+                event.target.disabled = false;
+            }
+        }
+    };
     
     // View group members function
     window.viewGroupMembers = async function(groupId, groupName) {
@@ -3037,6 +3439,264 @@ function initAdminGroupsPage() {
     }
 }
 
+// ==================== JOIN PAGE INITIALIZATION ====================
+
+function initJoinPage() {
+    const joinContainer = document.getElementById('joinContainer');
+    const groupInfo = document.getElementById('groupInfo');
+    const joinBtn = document.getElementById('joinBtn');
+    const backBtn = document.getElementById('backBtn');
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const inviteCode = urlParams.get('code');
+    
+    // Check if invite code is provided
+    if (!inviteCode) {
+        showError('Invalid invite link. Please check the link and try again.');
+        return;
+    }
+    
+    // Check if user is logged in
+    if (!groupChat.firebaseUser) {
+        // Store invite code in sessionStorage and redirect to login
+        sessionStorage.setItem('pendingInviteCode', inviteCode);
+        window.location.href = `login.html?redirect=join.html?code=${inviteCode}`;
+        return;
+    }
+    
+    // Load group by invite code
+    loadGroupByInviteCode(inviteCode);
+    
+    // Back button
+    if (backBtn) {
+        backBtn.addEventListener('click', () => {
+            window.location.href = 'groups.html';
+        });
+    }
+    
+    // Load group by invite code function
+    async function loadGroupByInviteCode(inviteCode) {
+        try {
+            // Show loading
+            groupInfo.innerHTML = '<div class="loading">Loading group information...</div>';
+            
+            // Get group by invite code
+            const group = await groupChat.getGroupByInviteCode(inviteCode);
+            
+            if (!group) {
+                showError('Invalid or expired invite link. Please ask the group admin for a new invite.');
+                return;
+            }
+            
+            // Check if user is already a member
+            const isMember = await groupChat.isMember(group.id);
+            
+            if (isMember) {
+                groupInfo.innerHTML = `
+                    <div class="group-card">
+                        <h3>${group.name}</h3>
+                        <p>${group.description}</p>
+                        <div class="group-details">
+                            <p><strong>Members:</strong> ${group.memberCount || 0}/${group.maxMembers || 50}</p>
+                            <p><strong>Created by:</strong> ${group.creatorName}</p>
+                        </div>
+                        <div class="already-member">
+                            <p>You're already a member of this group!</p>
+                        </div>
+                    </div>
+                `;
+                
+                if (joinBtn) {
+                    joinBtn.textContent = 'Go to Group Chat';
+                    joinBtn.onclick = () => {
+                        window.location.href = `group.html?id=${group.id}`;
+                    };
+                }
+                return;
+            }
+            
+            // Check if group is full
+            if (group.memberCount >= group.maxMembers) {
+                showError('This group is full and cannot accept new members.');
+                return;
+            }
+            
+            // Show group info
+            groupInfo.innerHTML = `
+                <div class="group-card">
+                    <h3>${group.name}</h3>
+                    <p>${group.description}</p>
+                    <div class="group-details">
+                        <p><strong>Category:</strong> ${group.category || 'General'}</p>
+                        <p><strong>Members:</strong> ${group.memberCount || 0}/${group.maxMembers || 50}</p>
+                        <p><strong>Created by:</strong> ${group.creatorName}</p>
+                        <p><strong>Privacy:</strong> ${group.privacy === 'private' ? 'Private' : 'Public'}</p>
+                    </div>
+                    ${group.topics && group.topics.length > 0 ? `
+                        <div class="group-topics">
+                            <h4>Discussion Topics</h4>
+                            <div class="topics-list">
+                                ${group.topics.slice(0, 3).map(topic => 
+                                    `<span class="topic-tag">${topic}</span>`
+                                ).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            // Setup join button
+            if (joinBtn) {
+                joinBtn.onclick = async () => {
+                    await joinGroup(group.id);
+                };
+            }
+            
+            // Add styles for join page
+            if (!document.getElementById('join-page-styles')) {
+                const styles = document.createElement('style');
+                styles.id = 'join-page-styles';
+                styles.textContent = `
+                    .group-card {
+                        background: white;
+                        border-radius: 12px;
+                        padding: 20px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                        margin-bottom: 20px;
+                    }
+                    
+                    .group-card h3 {
+                        margin: 0 0 10px 0;
+                        color: #333;
+                    }
+                    
+                    .group-card p {
+                        margin: 0 0 10px 0;
+                        color: #666;
+                        line-height: 1.5;
+                    }
+                    
+                    .group-details {
+                        background: #f8f9fa;
+                        border-radius: 8px;
+                        padding: 15px;
+                        margin: 15px 0;
+                    }
+                    
+                    .group-details p {
+                        margin: 5px 0;
+                    }
+                    
+                    .already-member {
+                        background: #e3f2fd;
+                        border-radius: 8px;
+                        padding: 15px;
+                        margin-top: 15px;
+                        text-align: center;
+                    }
+                    
+                    .group-topics {
+                        margin-top: 15px;
+                    }
+                    
+                    .group-topics h4 {
+                        margin: 0 0 10px 0;
+                        color: #444;
+                    }
+                    
+                    .topics-list {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 8px;
+                    }
+                    
+                    .topic-tag {
+                        background: #e0f7fa;
+                        color: #00796b;
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                        font-size: 12px;
+                    }
+                    
+                    .loading {
+                        text-align: center;
+                        padding: 40px;
+                        color: #666;
+                    }
+                    
+                    .error-message {
+                        background: #ffebee;
+                        border-radius: 8px;
+                        padding: 20px;
+                        text-align: center;
+                        margin-bottom: 20px;
+                    }
+                    
+                    .error-message h3 {
+                        color: #c62828;
+                        margin: 0 0 10px 0;
+                    }
+                `;
+                document.head.appendChild(styles);
+            }
+            
+        } catch (error) {
+            console.error('Error loading group:', error);
+            showError('Error loading group information. Please try again.');
+        }
+    }
+    
+    // Join group function
+    async function joinGroup(groupId) {
+        try {
+            // Check if user needs profile setup
+            if (groupChat.needsProfileSetup()) {
+                window.location.href = `set.html?id=${groupId}`;
+                return;
+            }
+            
+            // Disable join button
+            if (joinBtn) {
+                joinBtn.disabled = true;
+                joinBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Joining...';
+            }
+            
+            // Join the group
+            await groupChat.joinGroup(groupId);
+            
+            // Show success message
+            alert('Successfully joined the group!');
+            
+            // Redirect to group chat
+            window.location.href = `group.html?id=${groupId}`;
+            
+        } catch (error) {
+            console.error('Error joining group:', error);
+            alert('Error joining group: ' + error.message);
+            
+            // Re-enable join button
+            if (joinBtn) {
+                joinBtn.disabled = false;
+                joinBtn.textContent = 'Join Group';
+            }
+        }
+    }
+    
+    // Show error function
+    function showError(message) {
+        groupInfo.innerHTML = `
+            <div class="error-message">
+                <h3>Error</h3>
+                <p>${message}</p>
+            </div>
+        `;
+        
+        if (joinBtn) {
+            joinBtn.style.display = 'none';
+        }
+    }
+}
+
 // Make groupChat available globally
 window.groupChat = groupChat;
 
@@ -3044,3 +3704,15 @@ window.groupChat = groupChat;
 window.groupLogout = function() {
     groupChat.logout();
 };
+
+// Check for pending invite on login redirect
+document.addEventListener('DOMContentLoaded', function() {
+    const pendingInviteCode = sessionStorage.getItem('pendingInviteCode');
+    const currentPage = window.location.pathname.split('/').pop();
+    
+    if (pendingInviteCode && currentPage === 'join.html' && !window.location.search.includes('code=')) {
+        // Redirect to join page with invite code
+        window.location.href = `join.html?code=${pendingInviteCode}`;
+        sessionStorage.removeItem('pendingInviteCode');
+    }
+});
