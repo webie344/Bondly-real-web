@@ -107,13 +107,17 @@ class GroupChat {
     // Look up group by invite code
     async getGroupByInviteCode(inviteCode) {
         try {
+            console.log('Looking up group with invite code:', inviteCode);
             const groupsRef = collection(db, 'groups');
             const q = query(groupsRef, where('inviteCode', '==', inviteCode));
             const querySnapshot = await getDocs(q);
             
+            console.log('Query result:', querySnapshot.empty ? 'No groups found' : 'Group found');
+            
             if (!querySnapshot.empty) {
                 const doc = querySnapshot.docs[0];
                 const data = doc.data();
+                console.log('Group data found:', data.name);
                 return { 
                     id: doc.id, 
                     ...data,
@@ -3442,23 +3446,24 @@ function initAdminGroupsPage() {
 // ==================== JOIN PAGE INITIALIZATION ====================
 
 function initJoinPage() {
+    console.log('Join page initialized');
+    
     const joinContainer = document.getElementById('joinContainer');
     const groupInfo = document.getElementById('groupInfo');
     const joinBtn = document.getElementById('joinBtn');
     const backBtn = document.getElementById('backBtn');
-    const loginPrompt = document.getElementById('loginPrompt');
+    const errorNotification = document.getElementById('errorNotification');
     
     const urlParams = new URLSearchParams(window.location.search);
     const inviteCode = urlParams.get('code');
     
     // Check if invite code is provided
     if (!inviteCode) {
-        showError('Invalid invite link. Please check the link and try again.');
+        showError('Invalid invite link. No invitation code found. Please check the link and try again.');
         return;
     }
     
-    // Load group by invite code (no auth required to view)
-    loadGroupByInviteCode(inviteCode);
+    console.log('Invite code found:', inviteCode);
     
     // Back button
     if (backBtn) {
@@ -3467,47 +3472,110 @@ function initJoinPage() {
         });
     }
     
+    // Load group by invite code
+    loadGroupByInviteCode(inviteCode);
+    
     // Load group by invite code function
     async function loadGroupByInviteCode(inviteCode) {
         try {
             // Show loading
-            groupInfo.innerHTML = '<div class="loading">Loading group information...</div>';
+            groupInfo.innerHTML = `
+                <div class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Loading group information...</p>
+                </div>
+            `;
             
-            // Get group by invite code (this doesn't require auth)
+            console.log('Fetching group with invite code:', inviteCode);
+            
+            // Get group by invite code
             const group = await groupChat.getGroupByInviteCode(inviteCode);
             
             if (!group) {
-                showError('Invalid or expired invite link. Please ask the group admin for a new invite.');
+                showError('Invalid or expired invite link. The group may have been deleted or the invite code is incorrect.');
                 return;
             }
+            
+            console.log('Group found:', group.name);
             
             // Generate group avatar
             const groupAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(group.name)}&backgroundColor=00897b&backgroundType=gradientLinear`;
             
+            // Format member count
+            const memberCount = group.memberCount || 0;
+            const maxMembers = group.maxMembers || 50;
+            const memberPercentage = Math.round((memberCount / maxMembers) * 100);
+            
             // Show group info
             groupInfo.innerHTML = `
                 <div class="group-card">
-                    <div class="group-avatar-section">
-                        <img src="${groupAvatar}" alt="${group.name}" class="group-avatar-large">
-                        <div class="group-title-section">
-                            <h3 class="group-name">${group.name}</h3>
-                            <span class="group-category">${group.category || 'General'}</span>
+                    <div class="group-header">
+                        <div class="group-avatar-section">
+                            <img src="${groupAvatar}" alt="${group.name}" class="group-avatar-large">
+                            <div class="group-title-section">
+                                <h2 class="group-name">${group.name}</h2>
+                                <div class="group-meta">
+                                    <span class="group-category">${group.category || 'General'}</span>
+                                    <span class="group-privacy-badge ${group.privacy === 'private' ? 'private' : 'public'}">
+                                        <i class="fas ${group.privacy === 'private' ? 'fa-lock' : 'fa-globe'}"></i>
+                                        ${group.privacy === 'private' ? 'Private Group' : 'Public Group'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="group-description">
+                            <p>${group.description || 'No description provided.'}</p>
+                        </div>
+                        
+                        <div class="group-stats">
+                            <div class="stat-item">
+                                <i class="fas fa-users"></i>
+                                <div class="stat-content">
+                                    <span class="stat-value">${memberCount}/${maxMembers}</span>
+                                    <span class="stat-label">Members</span>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" style="width: ${memberPercentage}%"></div>
+                                    </div>
+                                    <span class="stat-percentage">${memberPercentage}% full</span>
+                                </div>
+                            </div>
+                            <div class="stat-item">
+                                <i class="fas fa-user-circle"></i>
+                                <div class="stat-content">
+                                    <span class="stat-value">${group.creatorName || 'Unknown'}</span>
+                                    <span class="stat-label">Created by</span>
+                                </div>
+                            </div>
+                            <div class="stat-item">
+                                <i class="fas fa-calendar"></i>
+                                <div class="stat-content">
+                                    <span class="stat-value">${group.createdAt ? new Date(group.createdAt).toLocaleDateString() : 'Unknown'}</span>
+                                    <span class="stat-label">Created on</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <p class="group-description">${group.description}</p>
-                    <div class="group-details">
-                        <p><i class="fas fa-users"></i> <strong>Members:</strong> ${group.memberCount || 0}/${group.maxMembers || 50}</p>
-                        <p><i class="fas fa-user"></i> <strong>Created by:</strong> ${group.creatorName}</p>
-                        <p><i class="fas ${group.privacy === 'private' ? 'fa-lock' : 'fa-globe'}"></i> <strong>Privacy:</strong> ${group.privacy === 'private' ? 'Private' : 'Public'}</p>
-                    </div>
+                    
                     ${group.topics && group.topics.length > 0 ? `
-                        <div class="group-topics">
-                            <h4><i class="fas fa-comments"></i> Discussion Topics</h4>
-                            <div class="topics-list">
-                                ${group.topics.slice(0, 5).map(topic => 
-                                    `<span class="topic-tag">${topic}</span>`
+                        <div class="group-section">
+                            <h3><i class="fas fa-comments"></i> Discussion Topics</h3>
+                            <div class="topics-grid">
+                                ${group.topics.map(topic => 
+                                    `<span class="topic-chip">${topic}</span>`
                                 ).join('')}
                             </div>
+                        </div>
+                    ` : ''}
+                    
+                    ${group.rules && group.rules.length > 0 ? `
+                        <div class="group-section">
+                            <h3><i class="fas fa-gavel"></i> Group Rules</h3>
+                            <ul class="rules-list">
+                                ${group.rules.map(rule => 
+                                    `<li><i class="fas fa-check-circle"></i> ${rule}</li>`
+                                ).join('')}
+                            </ul>
                         </div>
                     ` : ''}
                 </div>
@@ -3521,25 +3589,37 @@ function initJoinPage() {
                     groupChat.isMember(group.id).then(isMember => {
                         if (isMember) {
                             joinBtn.innerHTML = '<i class="fas fa-comments"></i> Enter Group Chat';
+                            joinBtn.className = 'join-btn success';
                             joinBtn.onclick = () => {
                                 window.location.href = `group.html?id=${group.id}`;
                             };
                         } else {
                             joinBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Join Group';
+                            joinBtn.className = 'join-btn primary';
                             joinBtn.onclick = async () => {
                                 await joinGroup(group.id);
                             };
                         }
+                    }).catch(error => {
+                        console.error('Error checking membership:', error);
+                        joinBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Join Group';
+                        joinBtn.className = 'join-btn primary';
+                        joinBtn.onclick = async () => {
+                            await joinGroup(group.id);
+                        };
                     });
                 } else {
                     // User is not logged in
                     joinBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login to Join';
+                    joinBtn.className = 'join-btn secondary';
                     joinBtn.onclick = () => {
                         // Store invite code and redirect to login
                         sessionStorage.setItem('pendingInviteCode', inviteCode);
                         window.location.href = `login.html?redirect=join.html?code=${inviteCode}`;
                     };
                 }
+                
+                joinBtn.style.display = 'block';
             }
             
             // Add styles for join page
@@ -3547,144 +3627,280 @@ function initJoinPage() {
                 const styles = document.createElement('style');
                 styles.id = 'join-page-styles';
                 styles.textContent = `
+                    .join-container {
+                        max-width: 800px;
+                        margin: 0 auto;
+                        padding: 20px;
+                    }
+                    
                     .group-card {
                         background: white;
                         border-radius: 16px;
-                        padding: 25px;
-                        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+                        padding: 30px;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
                         margin-bottom: 25px;
+                        border: 1px solid #eaeaea;
+                    }
+                    
+                    .group-header {
+                        margin-bottom: 30px;
                     }
                     
                     .group-avatar-section {
                         display: flex;
                         align-items: center;
-                        gap: 15px;
+                        gap: 20px;
                         margin-bottom: 20px;
                     }
                     
                     .group-avatar-large {
-                        width: 80px;
-                        height: 80px;
+                        width: 100px;
+                        height: 100px;
                         border-radius: 50%;
                         border: 4px solid #667eea;
+                        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
                     }
                     
-                    .group-title-section h3 {
-                        margin: 0;
+                    .group-title-section h2 {
+                        margin: 0 0 8px 0;
                         color: #333;
-                        font-size: 24px;
+                        font-size: 28px;
+                        font-weight: 700;
+                    }
+                    
+                    .group-meta {
+                        display: flex;
+                        gap: 12px;
+                        flex-wrap: wrap;
                     }
                     
                     .group-category {
                         background: #e0f7fa;
                         color: #00796b;
-                        padding: 4px 12px;
+                        padding: 6px 14px;
                         border-radius: 20px;
                         font-size: 14px;
-                        font-weight: 500;
+                        font-weight: 600;
+                    }
+                    
+                    .group-privacy-badge {
+                        padding: 6px 14px;
+                        border-radius: 20px;
+                        font-size: 14px;
+                        font-weight: 600;
+                        display: flex;
+                        align-items: center;
+                        gap: 6px;
+                    }
+                    
+                    .group-privacy-badge.private {
+                        background: #ffebee;
+                        color: #c62828;
+                    }
+                    
+                    .group-privacy-badge.public {
+                        background: #e8f5e9;
+                        color: #2e7d32;
                     }
                     
                     .group-description {
-                        color: #666;
-                        line-height: 1.6;
-                        margin: 15px 0;
-                        font-size: 16px;
-                    }
-                    
-                    .group-details {
                         background: #f8f9fa;
                         border-radius: 12px;
                         padding: 20px;
                         margin: 20px 0;
+                        border-left: 4px solid #667eea;
                     }
                     
-                    .group-details p {
-                        margin: 8px 0;
+                    .group-description p {
+                        margin: 0;
                         color: #555;
-                        display: flex;
-                        align-items: center;
-                        gap: 10px;
+                        line-height: 1.6;
+                        font-size: 16px;
                     }
                     
-                    .group-details i {
+                    .group-stats {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                        gap: 20px;
+                        margin-top: 25px;
+                    }
+                    
+                    .stat-item {
+                        background: #f8f9fa;
+                        border-radius: 12px;
+                        padding: 20px;
+                        display: flex;
+                        align-items: center;
+                        gap: 15px;
+                        transition: transform 0.2s;
+                    }
+                    
+                    .stat-item:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                    }
+                    
+                    .stat-item i {
+                        font-size: 24px;
                         color: #667eea;
-                        width: 20px;
+                        width: 40px;
+                        height: 40px;
+                        background: white;
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
                     }
                     
-                    .group-topics {
-                        margin-top: 20px;
+                    .stat-content {
+                        flex: 1;
                     }
                     
-                    .group-topics h4 {
-                        margin: 0 0 15px 0;
+                    .stat-value {
+                        display: block;
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: #333;
+                        margin-bottom: 4px;
+                    }
+                    
+                    .stat-label {
+                        display: block;
+                        font-size: 14px;
+                        color: #666;
+                        margin-bottom: 8px;
+                    }
+                    
+                    .progress-bar {
+                        height: 6px;
+                        background: #e0e0e0;
+                        border-radius: 3px;
+                        overflow: hidden;
+                        margin: 8px 0;
+                    }
+                    
+                    .progress-fill {
+                        height: 100%;
+                        background: linear-gradient(90deg, #667eea, #764ba2);
+                        border-radius: 3px;
+                        transition: width 0.3s ease;
+                    }
+                    
+                    .stat-percentage {
+                        font-size: 12px;
+                        color: #666;
+                        font-weight: 600;
+                    }
+                    
+                    .group-section {
+                        margin: 25px 0;
+                        padding: 25px 0;
+                        border-top: 1px solid #eee;
+                    }
+                    
+                    .group-section h3 {
+                        margin: 0 0 20px 0;
                         color: #444;
+                        font-size: 20px;
                         display: flex;
                         align-items: center;
                         gap: 10px;
                     }
                     
-                    .topics-list {
+                    .group-section h3 i {
+                        color: #667eea;
+                    }
+                    
+                    .topics-grid {
                         display: flex;
                         flex-wrap: wrap;
                         gap: 10px;
                     }
                     
-                    .topic-tag {
+                    .topic-chip {
                         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                         color: white;
-                        padding: 8px 16px;
-                        border-radius: 20px;
+                        padding: 10px 18px;
+                        border-radius: 25px;
                         font-size: 14px;
                         font-weight: 500;
+                        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
                     }
                     
-                    .loading {
-                        text-align: center;
-                        padding: 40px;
-                        color: #666;
-                        font-size: 18px;
-                    }
-                    
-                    .error-message {
-                        background: #ffebee;
-                        border-radius: 12px;
-                        padding: 25px;
-                        text-align: center;
-                        margin-bottom: 25px;
-                    }
-                    
-                    .error-message h3 {
-                        color: #c62828;
-                        margin: 0 0 15px 0;
-                        font-size: 20px;
-                    }
-                    
-                    .error-message p {
-                        color: #666;
+                    .rules-list {
+                        list-style: none;
+                        padding: 0;
                         margin: 0;
                     }
                     
-                    .join-btn {
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        color: white;
-                        border: none;
-                        padding: 15px 30px;
-                        border-radius: 25px;
+                    .rules-list li {
+                        padding: 12px 0;
+                        border-bottom: 1px solid #f0f0f0;
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                        color: #555;
+                    }
+                    
+                    .rules-list li:last-child {
+                        border-bottom: none;
+                    }
+                    
+                    .rules-list li i {
+                        color: #4CAF50;
                         font-size: 16px;
+                    }
+                    
+                    .join-btn {
+                        display: block;
+                        width: 100%;
+                        padding: 18px 30px;
+                        border-radius: 12px;
+                        font-size: 18px;
                         font-weight: 600;
                         cursor: pointer;
-                        width: 100%;
+                        border: none;
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        gap: 10px;
+                        gap: 12px;
                         transition: all 0.3s ease;
-                        margin-top: 20px;
+                        margin-top: 30px;
+                        text-decoration: none;
                     }
                     
-                    .join-btn:hover {
+                    .join-btn.primary {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+                    }
+                    
+                    .join-btn.primary:hover {
                         transform: translateY(-2px);
-                        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+                        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+                    }
+                    
+                    .join-btn.secondary {
+                        background: #f8f9fa;
+                        color: #667eea;
+                        border: 2px solid #667eea;
+                    }
+                    
+                    .join-btn.secondary:hover {
+                        background: #667eea;
+                        color: white;
+                    }
+                    
+                    .join-btn.success {
+                        background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
+                        color: white;
+                        box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+                    }
+                    
+                    .join-btn.success:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 6px 20px rgba(76, 175, 80, 0.6);
                     }
                     
                     .join-btn:disabled {
@@ -3692,13 +3908,163 @@ function initJoinPage() {
                         cursor: not-allowed;
                         transform: none !important;
                     }
+                    
+                    .loading-state {
+                        text-align: center;
+                        padding: 60px 20px;
+                    }
+                    
+                    .spinner {
+                        width: 50px;
+                        height: 50px;
+                        border: 4px solid #f3f3f3;
+                        border-top: 4px solid #667eea;
+                        border-radius: 50%;
+                        animation: spin 1s linear infinite;
+                        margin: 0 auto 20px;
+                    }
+                    
+                    .loading-state p {
+                        color: #666;
+                        font-size: 18px;
+                        margin: 0;
+                    }
+                    
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                    
+                    .error-notification {
+                        background: #ffebee;
+                        border: 1px solid #ffcdd2;
+                        border-radius: 12px;
+                        padding: 20px;
+                        margin-bottom: 25px;
+                        display: none;
+                    }
+                    
+                    .error-notification.show {
+                        display: block;
+                        animation: slideIn 0.3s ease;
+                    }
+                    
+                    .error-notification .error-header {
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                        margin-bottom: 10px;
+                    }
+                    
+                    .error-notification .error-header i {
+                        color: #c62828;
+                        font-size: 24px;
+                    }
+                    
+                    .error-notification .error-header h3 {
+                        margin: 0;
+                        color: #c62828;
+                        font-size: 18px;
+                    }
+                    
+                    .error-notification .error-message {
+                        color: #666;
+                        margin: 0;
+                        line-height: 1.5;
+                    }
+                    
+                    .error-notification .error-details {
+                        background: rgba(198, 40, 40, 0.1);
+                        border-radius: 8px;
+                        padding: 12px;
+                        margin-top: 15px;
+                        font-family: monospace;
+                        font-size: 12px;
+                        color: #c62828;
+                        overflow-x: auto;
+                        display: none;
+                    }
+                    
+                    .error-notification.show-details .error-details {
+                        display: block;
+                    }
+                    
+                    .error-notification .error-actions {
+                        display: flex;
+                        gap: 10px;
+                        margin-top: 15px;
+                    }
+                    
+                    .error-notification .error-btn {
+                        padding: 8px 16px;
+                        border-radius: 6px;
+                        font-size: 14px;
+                        font-weight: 500;
+                        cursor: pointer;
+                        border: none;
+                        transition: all 0.2s;
+                    }
+                    
+                    .error-notification .retry-btn {
+                        background: #c62828;
+                        color: white;
+                    }
+                    
+                    .error-notification .retry-btn:hover {
+                        background: #b71c1c;
+                    }
+                    
+                    .error-notification .details-btn {
+                        background: transparent;
+                        color: #c62828;
+                        border: 1px solid #c62828;
+                    }
+                    
+                    .error-notification .details-btn:hover {
+                        background: rgba(198, 40, 40, 0.1);
+                    }
+                    
+                    @keyframes slideIn {
+                        from {
+                            opacity: 0;
+                            transform: translateY(-10px);
+                        }
+                        to {
+                            opacity: 1;
+                            transform: translateY(0);
+                        }
+                    }
+                    
+                    @media (max-width: 768px) {
+                        .join-container {
+                            padding: 15px;
+                        }
+                        
+                        .group-card {
+                            padding: 20px;
+                        }
+                        
+                        .group-avatar-section {
+                            flex-direction: column;
+                            text-align: center;
+                        }
+                        
+                        .group-stats {
+                            grid-template-columns: 1fr;
+                        }
+                        
+                        .join-btn {
+                            padding: 16px 20px;
+                            font-size: 16px;
+                        }
+                    }
                 `;
                 document.head.appendChild(styles);
             }
             
         } catch (error) {
             console.error('Error loading group:', error);
-            showError('Error loading group information. Please try again.');
+            showError('Error loading group information. Please try again.', error);
         }
     }
     
@@ -3707,7 +4073,7 @@ function initJoinPage() {
         try {
             // Check if user is logged in
             if (!groupChat.firebaseUser) {
-                alert('Please login to join the group');
+                showError('Please login to join the group');
                 window.location.href = 'login.html';
                 return;
             }
@@ -3735,7 +4101,7 @@ function initJoinPage() {
             
         } catch (error) {
             console.error('Error joining group:', error);
-            alert('Error joining group: ' + error.message);
+            showError('Error joining group: ' + error.message, error);
             
             // Re-enable join button
             if (joinBtn) {
@@ -3745,15 +4111,74 @@ function initJoinPage() {
         }
     }
     
-    // Show error function
-    function showError(message) {
-        groupInfo.innerHTML = `
-            <div class="error-message">
-                <h3>Error</h3>
-                <p>${message}</p>
-            </div>
-        `;
+    // Show error function with detailed notification
+    function showError(message, error = null) {
+        // Create error notification if it doesn't exist
+        if (!errorNotification) {
+            const notification = document.createElement('div');
+            notification.id = 'errorNotification';
+            notification.className = 'error-notification';
+            notification.innerHTML = `
+                <div class="error-header">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <h3>Error</h3>
+                </div>
+                <p class="error-message">${message}</p>
+                ${error ? `
+                    <div class="error-details">${error.stack || error.toString()}</div>
+                    <div class="error-actions">
+                        <button class="error-btn retry-btn" onclick="location.reload()">
+                            <i class="fas fa-redo"></i> Retry
+                        </button>
+                        <button class="error-btn details-btn" onclick="this.parentElement.parentElement.classList.toggle('show-details')">
+                            <i class="fas fa-code"></i> Show Details
+                        </button>
+                    </div>
+                ` : ''}
+            `;
+            
+            // Insert at the beginning of join container
+            if (joinContainer) {
+                joinContainer.insertBefore(notification, joinContainer.firstChild);
+            } else {
+                document.body.appendChild(notification);
+            }
+            
+            notification.classList.add('show');
+        } else {
+            // Update existing notification
+            errorNotification.innerHTML = `
+                <div class="error-header">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <h3>Error</h3>
+                </div>
+                <p class="error-message">${message}</p>
+                ${error ? `
+                    <div class="error-details">${error.stack || error.toString()}</div>
+                    <div class="error-actions">
+                        <button class="error-btn retry-btn" onclick="location.reload()">
+                            <i class="fas fa-redo"></i> Retry
+                        </button>
+                        <button class="error-btn details-btn" onclick="this.parentElement.parentElement.classList.toggle('show-details')">
+                            <i class="fas fa-code"></i> Show Details
+                        </button>
+                    </div>
+                ` : ''}
+            `;
+            errorNotification.classList.add('show');
+        }
         
+        // Update group info area
+        if (groupInfo) {
+            groupInfo.innerHTML = `
+                <div class="error-placeholder">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <p>Unable to load group information. Please try again.</p>
+                </div>
+            `;
+        }
+        
+        // Hide join button if it exists
         if (joinBtn) {
             joinBtn.style.display = 'none';
         }
