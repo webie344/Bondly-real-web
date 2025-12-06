@@ -548,6 +548,26 @@
             font-size: 24px;
             margin-bottom: 10px;
         }
+        
+        .debug-info {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #666;
+            display: none;
+        }
+        
+        .debug-toggle {
+            color: #666;
+            font-size: 12px;
+            cursor: pointer;
+            text-decoration: underline;
+            margin-top: 10px;
+            display: inline-block;
+        }
     </style>
 </head>
 <body>
@@ -630,24 +650,40 @@
         // Current group data
         let currentGroup = null;
         let isMember = false;
+        let groupChatReady = false;
+
+        // Initialize debug mode
+        const debugMode = true; // Set to true to see debug info
 
         // Back button functionality
         backBtn.addEventListener('click', () => {
-            // If user came from groups page, go back there
-            if (document.referrer.includes('bondlydating.vercel.app')) {
-                window.history.back();
-            } else {
-                window.location.href = 'groups.html';
-            }
+            window.location.href = 'index.html';
         });
 
-        // Wait for group chat system to initialize
-        document.addEventListener('groupAuthReady', () => {
+        // Initialize page when DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, initializing join page...');
             initJoinPage();
+        });
+
+        // Listen for groupAuthReady event from group.js
+        document.addEventListener('groupAuthReady', function() {
+            console.log('groupAuthReady event received');
+            groupChatReady = true;
+            
+            // If we already have an invite code, try to load the group
+            const urlParams = new URLSearchParams(window.location.search);
+            const inviteCode = urlParams.get('code');
+            
+            if (inviteCode && currentGroup === null) {
+                loadGroupByInviteCode(inviteCode);
+            }
         });
 
         // Initialize join page
         async function initJoinPage() {
+            console.log('Initializing join page...');
+            
             const urlParams = new URLSearchParams(window.location.search);
             const inviteCode = urlParams.get('code');
 
@@ -656,37 +692,110 @@
                 return;
             }
 
+            console.log('Invite code found:', inviteCode);
+
             // Show loading state
             showLoading();
 
+            // Wait for groupChat to be ready
+            console.log('Waiting for groupChat to be ready...');
+            
+            // Check if groupChat is already available
+            if (window.groupChat) {
+                console.log('groupChat is already available');
+                groupChatReady = true;
+                await loadGroupByInviteCode(inviteCode);
+            } else {
+                console.log('groupChat not available yet, waiting for initialization...');
+                // Set a timeout to show error if groupChat doesn't load
+                setTimeout(() => {
+                    if (!groupChatReady) {
+                        showError('System Error', 'Failed to initialize group system. Please refresh the page or try again later.');
+                    }
+                }, 10000); // 10 second timeout
+            }
+        }
+
+        // Load group by invite code
+        async function loadGroupByInviteCode(inviteCode) {
+            console.log('Loading group with invite code:', inviteCode);
+            
             try {
+                // Check if groupChat is available
+                if (!window.groupChat) {
+                    showError('System Error', 'Group system not initialized. Please refresh the page.');
+                    return;
+                }
+
                 // Get group by invite code
+                console.log('Calling groupChat.getGroupByInviteCode...');
                 currentGroup = await window.groupChat.getGroupByInviteCode(inviteCode);
+
+                console.log('Group data received:', currentGroup ? 'Group found' : 'Group not found');
 
                 if (!currentGroup) {
                     showError('Invalid Invite', 'This invite link is invalid or has expired. Please ask the group admin for a new invite.');
                     return;
                 }
 
-                // Check if user is already a member
-                isMember = await window.groupChat.isMember(currentGroup.id);
+                console.log('Group name:', currentGroup.name);
+                
+                // Check if user is already a member (only if logged in)
+                if (window.groupChat.firebaseUser) {
+                    console.log('User is logged in, checking membership...');
+                    isMember = await window.groupChat.isMember(currentGroup.id);
+                    console.log('Is member?', isMember);
+                } else {
+                    console.log('User is not logged in');
+                    isMember = false;
+                }
 
                 // Display group information
                 displayGroupInfo();
 
                 // Check if user needs profile setup
-                if (!isMember && window.groupChat.needsProfileSetup()) {
+                if (!isMember && window.groupChat.needsProfileSetup && window.groupChat.needsProfileSetup()) {
+                    console.log('User needs profile setup');
                     showProfileWarning();
                 }
 
             } catch (error) {
                 console.error('Error loading group:', error);
                 showError('Error Loading Group', error.message || 'Failed to load group information. Please try again.');
+                
+                // Show debug info in debug mode
+                if (debugMode) {
+                    const debugDiv = document.createElement('div');
+                    debugDiv.className = 'debug-info';
+                    debugDiv.id = 'debugInfo';
+                    debugDiv.innerHTML = `
+                        <strong>Debug Information:</strong><br>
+                        Error: ${error.message}<br>
+                        Stack: ${error.stack || 'No stack trace'}<br>
+                        Invite Code: ${inviteCode}<br>
+                        groupChat available: ${!!window.groupChat}<br>
+                        groupChatReady: ${groupChatReady}<br>
+                        Firebase User: ${window.groupChat?.firebaseUser?.uid || 'Not logged in'}
+                    `;
+                    
+                    const toggleLink = document.createElement('span');
+                    toggleLink.className = 'debug-toggle';
+                    toggleLink.textContent = 'Show/Hide Debug Info';
+                    toggleLink.onclick = () => {
+                        debugDiv.style.display = debugDiv.style.display === 'none' ? 'block' : 'none';
+                    };
+                    
+                    if (errorContainer) {
+                        errorContainer.appendChild(toggleLink);
+                        errorContainer.appendChild(debugDiv);
+                    }
+                }
             }
         }
 
         // Display group information
         function displayGroupInfo() {
+            console.log('Displaying group info...');
             hideLoading();
             
             // Generate group avatar
@@ -812,9 +921,15 @@
                             <i class="fas fa-users"></i> Browse More Groups
                         </button>
                     ` : `
-                        <button class="btn btn-primary" id="joinBtn">
-                            <i class="fas fa-user-plus"></i> Join Group
-                        </button>
+                        ${window.groupChat?.firebaseUser ? `
+                            <button class="btn btn-primary" id="joinBtn">
+                                <i class="fas fa-user-plus"></i> Join Group
+                            </button>
+                        ` : `
+                            <button class="btn btn-primary" id="loginBtn" onclick="window.location.href='login.html?redirect=' + encodeURIComponent(window.location.href)">
+                                <i class="fas fa-sign-in-alt"></i> Login to Join
+                            </button>
+                        `}
                         <button class="btn btn-secondary" onclick="window.location.href='groups.html'">
                             <i class="fas fa-times"></i> Cancel
                         </button>
@@ -830,9 +945,37 @@
             groupInfo.innerHTML = html;
             groupInfo.style.display = 'block';
             
-            // Add event listener to join button if not a member
-            if (!isMember) {
-                document.getElementById('joinBtn').addEventListener('click', joinGroup);
+            // Add event listener to join button if not a member and logged in
+            if (!isMember && window.groupChat?.firebaseUser) {
+                const joinBtn = document.getElementById('joinBtn');
+                if (joinBtn) {
+                    joinBtn.addEventListener('click', joinGroup);
+                }
+            }
+            
+            // Add debug info in debug mode
+            if (debugMode) {
+                const debugDiv = document.createElement('div');
+                debugDiv.className = 'debug-info';
+                debugDiv.innerHTML = `
+                    <strong>Debug Information:</strong><br>
+                    Group ID: ${currentGroup.id}<br>
+                    Invite Code: ${currentGroup.inviteCode || 'No invite code'}<br>
+                    Is Member: ${isMember}<br>
+                    Logged In: ${!!window.groupChat?.firebaseUser}<br>
+                    User ID: ${window.groupChat?.firebaseUser?.uid || 'Not logged in'}<br>
+                    Needs Profile Setup: ${window.groupChat?.needsProfileSetup ? window.groupChat.needsProfileSetup() : 'Unknown'}
+                `;
+                
+                const toggleLink = document.createElement('span');
+                toggleLink.className = 'debug-toggle';
+                toggleLink.textContent = 'Show/Hide Debug Info';
+                toggleLink.onclick = () => {
+                    debugDiv.style.display = debugDiv.style.display === 'none' ? 'block' : 'none';
+                };
+                
+                groupInfo.appendChild(toggleLink);
+                groupInfo.appendChild(debugDiv);
             }
         }
 
@@ -875,6 +1018,8 @@
             joinBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Joining...';
             
             try {
+                console.log('Attempting to join group:', currentGroup.id);
+                
                 // Check if group is full
                 if (currentGroup.memberCount >= currentGroup.maxMembers) {
                     throw new Error('This group is full and cannot accept new members.');
@@ -882,6 +1027,8 @@
                 
                 // Join the group
                 await window.groupChat.joinGroup(currentGroup.id);
+                
+                console.log('Successfully joined group');
                 
                 // Show success message
                 showSuccess();
@@ -925,6 +1072,7 @@
 
         // Show error state
         function showError(title, message) {
+            console.error('Showing error:', title, message);
             hideLoading();
             errorTitle.textContent = title;
             errorMessage.textContent = message;
@@ -945,6 +1093,23 @@
                 document.getElementById('joinBtn').click();
             }
         });
+        
+        // Fallback initialization after 3 seconds
+        setTimeout(() => {
+            if (!groupChatReady && !window.groupChat) {
+                console.warn('groupChat not initialized after 3 seconds, trying fallback...');
+                if (window.groupChat) {
+                    groupChatReady = true;
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const inviteCode = urlParams.get('code');
+                    if (inviteCode) {
+                        loadGroupByInviteCode(inviteCode);
+                    }
+                } else {
+                    console.error('groupChat still not available after timeout');
+                }
+            }
+        }, 3000);
     </script>
 </body>
 </html>
