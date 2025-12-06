@@ -53,6 +53,16 @@ let currentUser = null;
 let likedStreams = new Set();
 let viewedStreams = new Set();
 
+// TikTok Feed Instance
+let tiktokFeedInstance = null;
+
+// Rendering control
+let isRendering = false;
+let lastRenderTime = 0;
+
+// Comment tracking to prevent duplicates
+let activeCommentListeners = new Map();
+
 // Supported video formats
 const SUPPORTED_VIDEO_FORMATS = [
     'video/mp4', 'video/quicktime', 'video/x-m4v', 'video/3gpp', 'video/3gpp2',
@@ -141,7 +151,7 @@ class StreamManager {
                     isActive: true,
                     sortTimestamp: new Date().getTime(),
                     embedUrl: null,
-                    thumbnailUrl: thumbnailUrl, // Store the thumbnail URL
+                    thumbnailUrl: thumbnailUrl,
                     isPhoneVideo: this.isLikelyPhoneVideo(videoData),
                     isPortraitVideo: await this.isPortraitVideo(videoData),
                     needsConversion: this.needsConversion(videoData)
@@ -165,23 +175,15 @@ class StreamManager {
                 return 'images-defaultse-profile.jpg';
             }
 
-            // Check if it's a Cloudinary URL
             if (!videoUrl.includes('cloudinary.com')) {
                 return 'images-defaultse-profile.jpg';
             }
 
-            // Cloudinary transformation for thumbnail
-            // w_400: width 400px, h_225: height 225px (16:9 aspect ratio)
-            // c_fill: crop to fill dimensions, q_auto: automatic quality
-            // f_jpg: output as JPEG format
             if (videoUrl.includes('/upload/')) {
-                // For problematic videos, use different approach
                 if (videoUrl.includes('/upload/video/')) {
-                    // Already a video URL, convert to image
                     return videoUrl.replace('/upload/video/', '/upload/w_400,h_225,c_fill,q_auto,f_jpg/')
                                    .replace(/\.(mp4|mov|avi|mkv|webm)$/i, '.jpg');
                 } else {
-                    // Regular Cloudinary URL
                     return videoUrl.replace('/upload/', '/upload/w_400,h_225,c_fill,q_auto,f_jpg/');
                 }
             }
@@ -247,18 +249,15 @@ class StreamManager {
 
     // Validate video file for phone compatibility
     async validateVideoFile(file) {
-        // Check file size (increased to 1GB for phone videos)
         const maxSize = 1024 * 1024 * 1024;
         if (file.size > maxSize) {
             throw new Error('Video file must be smaller than 1GB');
         }
 
-        // Check if file is a video
         if (!file.type.startsWith('video/') && !this.isLikelyVideoFile(file)) {
             throw new Error('Please select a valid video file');
         }
 
-        // Check supported formats
         const isSupportedFormat = SUPPORTED_VIDEO_FORMATS.some(format => 
             file.type === format || 
             file.type.includes(format.replace('video/', ''))
@@ -272,7 +271,6 @@ class StreamManager {
             // We'll still try to upload as Cloudinary can handle many formats
         }
 
-        // Warn about problematic formats but don't block them
         if (this.needsConversion(file)) {
             // We'll still try to upload with enhanced transformations
         }
@@ -374,11 +372,10 @@ class StreamManager {
             streamsSnap.forEach(doc => {
                 const data = doc.data();
                 if (data.isActive !== false) {
-                    // Generate thumbnail URL if not already present
                     const streamWithThumbnail = {
                         id: doc.id,
                         ...data,
-                        thumbnailUrl: this.getStreamThumbnail(data), // Use helper function
+                        thumbnailUrl: this.getStreamThumbnail(data),
                         createdAt: data.createdAt || new Date(),
                         updatedAt: data.updatedAt || new Date(),
                         timestamp: data.createdAt?.toDate?.()?.getTime() || 
@@ -402,23 +399,21 @@ class StreamManager {
 
             return filteredStreams;
         } catch (error) {
+            console.error('Error getting streams:', error);
             return [];
         }
     }
 
     // Helper function to get thumbnail for a stream
     getStreamThumbnail(streamData) {
-        // If thumbnail already exists in database, use it
         if (streamData.thumbnailUrl && streamData.thumbnailUrl !== 'images-defaultse-profile.jpg') {
             return streamData.thumbnailUrl;
         }
         
-        // If no thumbnail but we have a video URL, generate one
         if (streamData.videoUrl && streamData.videoType === 'cloudinary') {
             return this.generateCloudinaryThumbnail(streamData.videoUrl);
         }
         
-        // Fallback to default image
         return 'images-defaultse-profile.jpg';
     }
 
@@ -448,7 +443,7 @@ class StreamManager {
             });
 
         } catch (error) {
-            // Silently handle error
+            console.error('Error adding viewer:', error);
         }
     }
 
@@ -473,26 +468,37 @@ class StreamManager {
             this.currentStreams.delete(streamId);
 
         } catch (error) {
-            // Silently handle error
+            console.error('Error removing viewer:', error);
         }
     }
 
     // LIKE FUNCTIONALITY
     async handleLike(streamId, likeButton) {
-        if (!currentUser) return;
-
-        // Prevent double liking
-        if (likedStreams.has(streamId)) {
-            return;
+        if (!currentUser) {
+            alert('Please login to like videos');
+            return null;
         }
 
+        // Check if already liked
+        const isLiked = likedStreams.has(streamId);
+        
         try {
             const streamRef = doc(db, 'streams', streamId);
             const streamSnap = await getDoc(streamRef);
             
             if (streamSnap.exists()) {
                 const stream = streamSnap.data();
-                const newLikes = (stream.likes || 0) + 1;
+                let newLikes = (stream.likes || 0);
+                
+                if (isLiked) {
+                    // Unlike
+                    newLikes = Math.max(0, newLikes - 1);
+                    likedStreams.delete(streamId);
+                } else {
+                    // Like
+                    newLikes = newLikes + 1;
+                    likedStreams.add(streamId);
+                }
                 
                 // Update Firestore
                 await updateDoc(streamRef, {
@@ -500,82 +506,94 @@ class StreamManager {
                     updatedAt: serverTimestamp()
                 });
 
-                // Update UI immediately
-                const likeCount = likeButton.querySelector('.like-count');
-                const likeIcon = likeButton.querySelector('i');
-                
-                if (likeCount) {
-                    likeCount.textContent = newLikes;
-                }
-                
-                if (likeIcon) {
-                    likeIcon.className = 'fas fa-heart';
-                }
-                
-                likeButton.classList.add('liked');
-                
-                // Mark as liked to prevent double likes
-                likedStreams.add(streamId);
+                // Save to localStorage
                 saveLikedStreams();
+
+                // Return the updated like count and whether it's liked
+                return { likes: newLikes, isLiked: !isLiked };
             }
         } catch (error) {
-            // Silently handle error
+            console.error('Error handling like:', error);
+            return null;
         }
     }
 
-    // COMMENT FUNCTIONALITY
-    async toggleComments(streamId) {
-        const commentsSection = document.getElementById(`comments-${streamId}`);
-        if (commentsSection) {
-            if (commentsSection.style.display === 'none') {
-                commentsSection.style.display = 'block';
-                await this.loadComments(streamId);
-            } else {
-                commentsSection.style.display = 'none';
-            }
-        }
-    }
-
-    async loadComments(streamId) {
-        const commentsList = document.getElementById(`comments-list-${streamId}`);
-        if (!commentsList) return;
+    // COMMENT FUNCTIONALITY - UPDATED TO PREVENT DUPLICATES
+    async loadComments(streamId, container) {
+        if (!container) return;
 
         try {
+            // Clean up previous listener for this stream if it exists
+            if (activeCommentListeners.has(streamId)) {
+                const unsubscribe = activeCommentListeners.get(streamId);
+                unsubscribe();
+                activeCommentListeners.delete(streamId);
+            }
+
+            // Create a new real-time listener
             const commentsQuery = query(
                 collection(db, 'streams', streamId, 'comments'), 
                 orderBy('createdAt', 'asc')
             );
-            const commentsSnap = await getDocs(commentsQuery);
             
-            commentsList.innerHTML = '';
-            
-            if (commentsSnap.empty) {
-                commentsList.innerHTML = '<div class="no-comments">No comments yet</div>';
-                return;
-            }
+            const unsubscribe = onSnapshot(commentsQuery, (snapshot) => {
+                container.innerHTML = '';
+                
+                if (snapshot.empty) {
+                    container.innerHTML = '<div class="no-comments">No comments yet</div>';
+                    return;
+                }
 
-            const userIds = new Set();
-            commentsSnap.forEach(doc => {
-                const comment = doc.data();
-                userIds.add(comment.userId);
+                const userIds = new Set();
+                snapshot.forEach(doc => {
+                    const comment = doc.data();
+                    userIds.add(comment.userId);
+                });
+
+                // Get user data for all comments
+                this.getUsersData([...userIds]).then(usersData => {
+                    // Clear container again in case we get multiple rapid updates
+                    container.innerHTML = '';
+                    
+                    // Track displayed comment IDs to prevent duplicates
+                    const displayedCommentIds = new Set();
+                    
+                    snapshot.forEach(doc => {
+                        const comment = doc.data();
+                        const commentId = doc.id;
+                        
+                        // Skip if we've already displayed this comment
+                        if (displayedCommentIds.has(commentId)) {
+                            return;
+                        }
+                        
+                        displayedCommentIds.add(commentId);
+                        const user = usersData[comment.userId] || {};
+                        const commentElement = this.createCommentElement(comment, user, commentId);
+                        container.appendChild(commentElement);
+                    });
+                    
+                    // Scroll to bottom
+                    container.scrollTop = container.scrollHeight;
+                });
+            }, (error) => {
+                console.error('Error loading comments:', error);
+                container.innerHTML = '<div class="error">Error loading comments</div>';
             });
 
-            const usersData = await this.getUsersData([...userIds]);
+            // Store the unsubscribe function
+            activeCommentListeners.set(streamId, unsubscribe);
 
-            commentsSnap.forEach(doc => {
-                const comment = doc.data();
-                const user = usersData[comment.userId] || {};
-                const commentElement = this.createCommentElement(comment, user);
-                commentsList.appendChild(commentElement);
-            });
         } catch (error) {
-            commentsList.innerHTML = '<div class="error">Error loading comments</div>';
+            console.error('Error setting up comment listener:', error);
+            container.innerHTML = '<div class="error">Error loading comments</div>';
         }
     }
 
-    createCommentElement(comment, user) {
+    createCommentElement(comment, user, commentId) {
         const commentDiv = document.createElement('div');
         commentDiv.className = 'comment-item';
+        commentDiv.dataset.commentId = commentId;
         commentDiv.innerHTML = `
             <div class="comment-header">
                 <img src="${user.profileImage || 'images-defaultse-profile.jpg'}" 
@@ -590,23 +608,22 @@ class StreamManager {
         return commentDiv;
     }
 
-    async handleAddComment(streamId) {
-        if (!currentUser) return;
+    async handleAddComment(streamId, commentText) {
+        if (!currentUser) {
+            alert('Please login to add comments');
+            return false;
+        }
 
-        const commentInput = document.querySelector(`.comment-input[data-stream-id="${streamId}"]`);
-        if (!commentInput) return;
-
-        const commentText = commentInput.value.trim();
-        if (!commentText) {
+        if (!commentText.trim()) {
             alert('Please enter a comment');
-            return;
+            return false;
         }
 
         try {
             // Add comment to subcollection
             await addDoc(collection(db, 'streams', streamId, 'comments'), {
                 userId: currentUser.uid,
-                text: commentText,
+                text: commentText.trim(),
                 createdAt: serverTimestamp()
             });
 
@@ -617,19 +634,11 @@ class StreamManager {
                 updatedAt: serverTimestamp()
             });
 
-            // Clear input and reload comments
-            commentInput.value = '';
-            await this.loadComments(streamId);
-
-            // Update comment count in UI
-            const commentCount = document.querySelector(`.comment-btn[data-stream-id="${streamId}"] .comment-count`);
-            if (commentCount) {
-                const currentCount = parseInt(commentCount.textContent) || 0;
-                commentCount.textContent = currentCount + 1;
-            }
-
+            return true;
         } catch (error) {
+            console.error('Error adding comment:', error);
             alert('Error adding comment: ' + error.message);
+            return false;
         }
     }
 
@@ -644,7 +653,7 @@ class StreamManager {
                     usersData[userId] = userSnap.data();
                 }
             } catch (error) {
-                // Silently handle error
+                console.error('Error getting user data:', error);
             }
         }
         
@@ -664,7 +673,7 @@ class StreamManager {
                         streams.push({
                             id: doc.id,
                             ...data,
-                            thumbnailUrl: this.getStreamThumbnail(data), // Generate thumbnail
+                            thumbnailUrl: this.getStreamThumbnail(data),
                             timestamp: data.createdAt?.toDate?.()?.getTime() || 
                                       data.sortTimestamp || 
                                       new Date().getTime()
@@ -685,6 +694,7 @@ class StreamManager {
 
                 callback(filteredStreams);
             }, (error) => {
+                console.error('Error listening to streams:', error);
                 callback([]);
             });
 
@@ -692,6 +702,7 @@ class StreamManager {
             return unsubscribe;
 
         } catch (error) {
+            console.error('Error setting up stream listener:', error);
             return () => {};
         }
     }
@@ -707,6 +718,7 @@ class StreamManager {
                     callback(streamData.currentViewers || 0);
                 }
             }, (error) => {
+                console.error('Error listening to viewer count:', error);
                 callback(0);
             });
 
@@ -714,6 +726,7 @@ class StreamManager {
             return unsubscribe;
 
         } catch (error) {
+            console.error('Error setting up viewer listener:', error);
             return () => {};
         }
     }
@@ -735,7 +748,7 @@ class StreamManager {
                 if (Date.now() - streamInfo.lastUpdate > 25000) {
                     this.updateViewerActivity(streamId);
                     streamInfo.lastUpdate = Date.now();
-            }
+                }
             });
         }, 30000);
 
@@ -758,7 +771,7 @@ class StreamManager {
                 lastActive: serverTimestamp()
             });
         } catch (error) {
-            // Silently handle error
+            console.error('Error updating viewer activity:', error);
         }
     }
 
@@ -773,6 +786,10 @@ class StreamManager {
         this.streamListeners.clear();
         this.viewerListeners.clear();
         
+        // Clean up comment listeners
+        activeCommentListeners.forEach(unsubscribe => unsubscribe());
+        activeCommentListeners.clear();
+        
         this.currentStreams.forEach((streamInfo, streamId) => {
             this.removeViewer(streamId);
         });
@@ -783,1012 +800,696 @@ class StreamManager {
 // Initialize Stream Manager
 const streamManager = new StreamManager();
 
-// Enhanced Video Player with better error handling for downloaded videos
-class VideoPlayer {
+// TikTok Feed Class
+class TikTokFeed {
     constructor() {
-        this.modal = null;
+        this.videoFeed = document.getElementById('videoFeed');
+        this.currentIndex = 0;
+        this.videos = [];
+        this.isSwiping = false;
+        this.startY = 0;
+        this.currentY = 0;
+        this.isDragging = false;
+        this.dragY = 0;
         this.currentStreamId = null;
-        this.currentVideoElement = null;
+        this.videoElements = new Map();
+        this.commentsModal = document.getElementById('commentsModal');
+        this.modalCommentsList = document.getElementById('modalCommentsList');
+        this.modalCommentInput = document.getElementById('modalCommentInput');
+        this.modalSendComment = document.getElementById('modalSendComment');
+        this.closeComments = document.getElementById('closeComments');
+        
         this.init();
     }
 
     init() {
-        this.createModal();
         this.setupEventListeners();
-    }
-
-    createModal() {
-        const existingModal = document.getElementById('videoPlayerModal');
-        if (existingModal) {
-            existingModal.remove();
-        }
-
-        this.modal = document.createElement('div');
-        this.modal.id = 'videoPlayerModal';
-        this.modal.className = 'video-player-modal';
-        this.modal.innerHTML = `
-            <div class="video-player-container">
-                <div class="video-player-header">
-                    <h3 class="video-player-title" id="videoPlayerTitle">Stream Video</h3>
-                    <button class="close-video-player" id="closeVideoPlayer">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-                
-                <div class="video-player-content" id="videoPlayerContent">
-                    <!-- Video will be loaded here -->
-                </div>
-
-                <div class="video-player-info">
-                    <div class="video-viewers">
-                        <i class="fas fa-eye"></i>
-                        <span id="videoPlayerViewers">0</span> watching now
-                    </div>
-                    <div class="video-description" id="videoPlayerDescription"></div>
-                    <div class="video-format-info" id="videoFormatInfo"></div>
-                </div>
-
-                <!-- Social Actions -->
-                <div class="social-actions-container" id="socialActionsContainer">
-                    <div class="stream-actions">
-                        <button class="stream-action like-btn" id="modalLikeBtn">
-                            <i class="far fa-heart"></i> 
-                            <span class="like-count">0</span>
-                        </button>
-                        <button class="stream-action comment-btn" id="modalCommentBtn">
-                            <i class="far fa-comment"></i> 
-                            <span class="comment-count">0</span>
-                        </button>
-                    </div>
-                    
-                    <div class="comments-section" id="modalCommentsSection" style="display: none;">
-                        <div class="add-comment">
-                            <input type="text" class="comment-input" id="modalCommentInput" placeholder="Write a comment...">
-                            <button class="send-comment-btn" id="modalSendComment">
-                                <i class="fas fa-paper-plane"></i> Send
-                            </button>
-                        </div>
-                        <div class="comments-list" id="modalCommentsList"></div>
-                    </div>
-                </div>
-
-                <div class="video-player-controls">
-                    <button class="video-control-btn" id="reloadVideo">
-                        <i class="fas fa-redo"></i> Reload Video
-                    </button>
-                    <button class="video-control-btn" id="toggleFullscreen">
-                        <i class="fas fa-expand"></i> Fullscreen
-                    </button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(this.modal);
-        this.addStyles();
-    }
-
-    addStyles() {
-        if (!document.getElementById('videoPlayerStyles')) {
-            const styles = document.createElement('style');
-            styles.id = 'videoPlayerStyles';
-            styles.textContent = `
-                .video-player-modal {
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    background: rgba(0, 0, 0, 0.95);
-                    z-index: 10000;
-                    display: none;
-                    justify-content: center;
-                    align-items: center;
-                    backdrop-filter: blur(5px);
-                    padding: 20px;
-                    box-sizing: border-box;
-                }
-                
-                .video-player-container {
-                    background: var(--bg-light);
-                    border-radius: 15px;
-                    padding: 20px;
-                    max-width: 95vw;
-                    max-height: 95vh;
-                    width: 1000px;
-                    height: auto;
-                    position: relative;
-                    box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-                    display: flex;
-                    flex-direction: column;
-                }
-                
-                .video-player-header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    margin-bottom: 15px;
-                    flex-shrink: 0;
-                }
-                
-                .video-player-title {
-                    color: var(--text-dark);
-                    font-size: 20px;
-                    font-weight: 600;
-                    margin: 0;
-                    flex: 1;
-                }
-                
-                .close-video-player {
-                    background: none;
-                    border: none;
-                    color: var(--text-light);
-                    font-size: 20px;
-                    cursor: pointer;
-                    padding: 8px;
-                    border-radius: 50%;
-                    transition: all 0.3s ease;
-                }
-                
-                .close-video-player:hover {
-                    background: var(--bg-dark);
-                    color: var(--text-dark);
-                }
-                
-                .video-player-content {
-                    margin-bottom: 15px;
-                    flex: 1;
-                    min-height: 400px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    background: #000;
-                    border-radius: 10px;
-                    overflow: hidden;
-                    position: relative;
-                }
-                
-                .video-embed-container {
-                    position: relative;
-                    width: 100%;
-                    height: 0;
-                    padding-bottom: 56.25%;
-                    border-radius: 10px;
-                    overflow: hidden;
-                    background: #000;
-                }
-                
-                .video-embed-container iframe {
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    border: none;
-                    border-radius: 8px;
-                }
-                
-                .cloudinary-video-container {
-                    width: 100%;
-                    height: 100%;
-                    border-radius: 10px;
-                    overflow: hidden;
-                    background: #000;
-                    position: relative;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-                
-                .cloudinary-video-container video {
-                    width: 100%;
-                    height: 100%;
-                    max-height: 70vh;
-                    border-radius: 8px;
-                    display: block;
-                    object-fit: contain;
-                }
-                
-                .cloudinary-video-container video::-webkit-media-controls-panel {
-                    display: flex !important;
-                    opacity: 1 !important;
-                    visibility: visible !important;
-                }
-                
-                .cloudinary-video-container video::-webkit-media-controls {
-                    display: flex !important;
-                    opacity: 1 !important;
-                }
-                
-                .cloudinary-video-container video::-webkit-media-controls-play-button,
-                .cloudinary-video-container video::-webkit-media-controls-timeline,
-                .cloudinary-video-container video::-webkit-media-controls-current-time-display,
-                .cloudinary-video-container video::-webkit-media-controls-time-remaining-display,
-                .cloudinary-video-container video::-webkit-media-controls-mute-button,
-                .cloudinary-video-container video::-webkit-media-controls-volume-slider,
-                .cloudinary-video-container video::-webkit-media-controls-fullscreen-button {
-                    display: flex !important;
-                    opacity: 1 !important;
-                }
-                
-                .video-loading {
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    background: rgba(0, 0, 0, 0.8);
-                    color: white;
-                    padding: 20px;
-                    border-radius: 10px;
-                    text-align: center;
-                    z-index: 10;
-                }
-                
-                .video-error {
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    background: rgba(255, 0, 0, 0.8);
-                    color: white;
-                    padding: 20px;
-                    border-radius: 10px;
-                    text-align: center;
-                    z-index: 10;
-                    width: 80%;
-                    max-width: 400px;
-                }
-                
-                .video-retry-button {
-                    background: var(--accent-color);
-                    color: white;
-                    border: none;
-                    padding: 10px 20px;
-                    border-radius: 5px;
-                    cursor: pointer;
-                    margin-top: 10px;
-                    font-weight: 600;
-                }
-                
-                .video-retry-button:hover {
-                    background: var(--accent-dark);
-                }
-                
-                .video-placeholder {
-                    position: relative;
-                    width: 100%;
-                    height: 400px;
-                    display: flex;
-                    flex-direction: column;
-                    justify-content: center;
-                    align-items: center;
-                    background: #1a1a1a;
-                    color: white;
-                    cursor: pointer;
-                    transition: background-color 0.3s ease;
-                    border-radius: 10px;
-                }
-                
-                .video-placeholder:hover {
-                    background: #2a2a2a;
-                }
-                
-                .video-placeholder i {
-                    font-size: 60px;
-                    margin-bottom: 15px;
-                    color: var(--accent-color);
-                }
-                
-                .video-placeholder p {
-                    margin: 0;
-                    font-size: 16px;
-                    font-weight: 500;
-                }
-                
-                .video-player-info {
-                    padding: 15px;
-                    background: var(--bg-dark);
-                    border-radius: 8px;
-                    margin-bottom: 15px;
-                    flex-shrink: 0;
-                }
-                
-                .video-viewers {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    color: var(--accent-color);
-                    font-weight: 600;
-                    margin-bottom: 10px;
-                    font-size: 14px;
-                }
-                
-                .video-description {
-                    color: var(--text-light);
-                    font-size: 14px;
-                    line-height: 1.4;
-                    margin-bottom: 10px;
-                }
-                
-                .video-format-info {
-                    color: var(--text-light);
-                    font-size: 12px;
-                    opacity: 0.7;
-                }
-                
-                .social-actions-container {
-                    margin-bottom: 15px;
-                    flex-shrink: 0;
-                }
-                
-                .stream-actions {
-                    display: flex;
-                    gap: 15px;
-                    margin-bottom: 15px;
-                    padding: 12px;
-                    background: var(--bg-dark);
-                    border-radius: 8px;
-                }
-
-                .stream-action {
-                    background: none;
-                    border: none;
-                    color: var(--text-light);
-                    cursor: pointer;
-                    padding: 10px 15px;
-                    border-radius: 8px;
-                    transition: all 0.3s ease;
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    font-size: 14px;
-                    font-weight: 500;
-                }
-
-                .stream-action:hover {
-                    background: rgba(255, 255, 255, 0.1);
-                    color: var(--text-dark);
-                }
-
-                .stream-action.liked {
-                    color: #e74c3c;
-                }
-
-                .stream-action.liked i {
-                    color: #e74c3c;
-                }
-
-                .stream-action i {
-                    font-size: 16px;
-                }
-
-                .comments-section {
-                    padding: 15px;
-                    background: var(--bg-dark);
-                    border-radius: 8px;
-                    margin-top: 10px;
-                }
-
-                .add-comment {
-                    display: flex;
-                    gap: 10px;
-                    margin-bottom: 15px;
-                }
-
-                .comment-input {
-                    flex: 1;
-                    padding: 10px 12px;
-                    border: 1px solid var(--border-color);
-                    border-radius: 8px;
-                    background: var(--bg-light);
-                    color: var(--text-dark);
-                    font-size: 14px;
-                }
-
-                .comment-input:focus {
-                    outline: none;
-                    border-color: var(--accent-color);
-                }
-
-                .comment-input::placeholder {
-                    color: var(--text-light);
-                }
-
-                .send-comment-btn {
-                    background: var(--accent-color);
-                    color: white;
-                    border: none;
-                    padding: 10px 15px;
-                    border-radius: 8px;
-                    cursor: pointer;
-                    font-size: 14px;
-                    display: flex;
-                    align-items: center;
-                    gap: 5px;
-                }
-
-                .send-comment-btn:hover {
-                    background: var(--accent-dark);
-                }
-
-                .comments-list {
-                    max-height: 200px;
-                    overflow-y: auto;
-                }
-
-                .comment-item {
-                    padding: 10px;
-                    border-bottom: 1px solid var(--border-color);
-                }
-
-                .comment-item:last-child {
-                    border-bottom: none;
-                }
-
-                .comment-header {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    margin-bottom: 5px;
-                }
-
-                .comment-avatar {
-                    width: 24px;
-                    height: 24px;
-                    border-radius: 50%;
-                    object-fit: cover;
-                }
-
-                .comment-info {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                }
-
-                .comment-info strong {
-                    font-size: 12px;
-                    color: var(--text-dark);
-                }
-
-                .comment-time {
-                    font-size: 10px;
-                    color: var(--text-light);
-                }
-
-                .comment-text {
-                    font-size: 12px;
-                    color: var(--text-dark);
-                    line-height: 1.4;
-                }
-
-                .no-comments {
-                    text-align: center;
-                    color: var(--text-light);
-                    font-style: italic;
-                    padding: 20px;
-                }
-
-                .error {
-                    color: #e74c3c;
-                    text-align: center;
-                    padding: 15px;
-                }
-
-                .video-player-controls {
-                    display: flex;
-                    gap: 10px;
-                    flex-shrink: 0;
-                }
-                
-                .video-control-btn {
-                    background: var(--bg-dark);
-                    color: var(--text-light);
-                    border: none;
-                    padding: 10px 15px;
-                    border-radius: 5px;
-                    cursor: pointer;
-                    font-size: 14px;
-                    transition: all 0.3s ease;
-                    display: flex;
-                    align-items: center;
-                    gap: 5px;
-                    flex: 1;
-                    justify-content: center;
-                }
-                
-                .video-control-btn:hover {
-                    background: var(--accent-color);
-                    color: white;
-                }
-
-                .video-player-modal.fullscreen {
-                    padding: 0;
-                }
-                
-                .video-player-modal.fullscreen .video-player-container {
-                    max-width: 100vw;
-                    max-height: 100vh;
-                    width: 100vw;
-                    height: 100vh;
-                    border-radius: 0;
-                    padding: 20px;
-                }
-                
-                .video-player-modal.fullscreen .cloudinary-video-container video {
-                    max-height: 85vh;
-                }
-                
-                @media (max-width: 768px) {
-                    .video-player-modal {
-                        padding: 10px;
-                    }
-                    
-                    .video-player-container {
-                        margin: 0;
-                        padding: 15px;
-                        width: 100%;
-                    }
-                    
-                    .video-player-title {
-                        font-size: 18px;
-                    }
-                    
-                    .video-placeholder i {
-                        font-size: 40px;
-                    }
-                    
-                    .video-placeholder p {
-                        font-size: 14px;
-                    }
-
-                    .video-preview-container {
-                        height: 150px;
-                    }
-
-                    .preview-play-button {
-                        width: 50px;
-                        height: 50px;
-                        font-size: 18px;
-                    }
-                    
-                    .video-player-controls {
-                        flex-direction: column;
-                    }
-
-                    .stream-actions {
-                        flex-direction: column;
-                        gap: 10px;
-                    }
-
-                    .comments-section {
-                        padding: 12px;
-                    }
-                    
-                    .cloudinary-video-container video {
-                        max-height: 60vh;
-                    }
-                }
-            `;
-            document.head.appendChild(styles);
-        }
+        this.loadInitialVideos();
+        this.hideSwipeIndicator();
     }
 
     setupEventListeners() {
-        const closeBtn = document.getElementById('closeVideoPlayer');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => {
-                this.close();
+        // Touch events for swiping
+        if (this.videoFeed) {
+            this.videoFeed.addEventListener('touchstart', (e) => this.handleTouchStart(e));
+            this.videoFeed.addEventListener('touchmove', (e) => this.handleTouchMove(e));
+            this.videoFeed.addEventListener('touchend', (e) => this.handleTouchEnd(e));
+
+            // Mouse events for desktop
+            this.videoFeed.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+            this.videoFeed.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+            this.videoFeed.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+            this.videoFeed.addEventListener('mouseleave', (e) => this.handleMouseLeave(e));
+        }
+
+        // Comments modal - FIXED: Use proper event delegation
+        if (this.closeComments) {
+            this.closeComments.addEventListener('click', () => this.closeCommentsModal());
+        }
+
+        if (this.modalSendComment) {
+            this.modalSendComment.addEventListener('click', () => this.handleAddComment());
+        }
+
+        if (this.modalCommentInput) {
+            this.modalCommentInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') this.handleAddComment();
             });
         }
 
-        const reloadBtn = document.getElementById('reloadVideo');
-        if (reloadBtn) {
-            reloadBtn.addEventListener('click', () => {
-                this.reloadCurrentVideo();
+        // Close modal when clicking outside
+        if (this.commentsModal) {
+            this.commentsModal.addEventListener('click', (e) => {
+                if (e.target === this.commentsModal) {
+                    this.closeCommentsModal();
+                }
             });
         }
 
-        const fullscreenBtn = document.getElementById('toggleFullscreen');
-        if (fullscreenBtn) {
-            fullscreenBtn.addEventListener('click', () => {
-                this.toggleFullscreen();
-            });
-        }
-
-        this.modal.addEventListener('click', (e) => {
-            if (e.target === this.modal) {
-                this.close();
+        // Handle visibility change
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.pauseCurrentVideo();
+            } else {
+                this.playCurrentVideo();
             }
         });
 
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && this.modal.style.display === 'flex') {
-                if (this.modal.classList.contains('fullscreen')) {
-                    this.toggleFullscreen();
-                } else {
-                    this.close();
+        // Prevent default scroll behavior
+        document.addEventListener('touchmove', (e) => {
+            if (this.isSwiping && e.target.closest('.video-feed')) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+    }
+
+    handleTouchStart(e) {
+        this.startY = e.touches[0].clientY;
+        this.currentY = this.startY;
+        this.isSwiping = true;
+        this.isDragging = true;
+        this.dragY = 0;
+    }
+
+    handleTouchMove(e) {
+        if (!this.isSwiping || !this.isDragging) return;
+        
+        e.preventDefault();
+        this.currentY = e.touches[0].clientY;
+        this.dragY = this.currentY - this.startY;
+        
+        this.videoFeed.style.transform = `translateY(${this.dragY}px)`;
+    }
+
+    handleTouchEnd(e) {
+        if (!this.isSwiping || !this.isDragging) return;
+        
+        const slideHeight = window.innerHeight;
+        const threshold = slideHeight * 0.15;
+        
+        if (Math.abs(this.dragY) > threshold) {
+            if (this.dragY < 0 && this.currentIndex < this.videos.length - 1) {
+                this.changeVideo(this.currentIndex + 1);
+            } else if (this.dragY > 0 && this.currentIndex > 0) {
+                this.changeVideo(this.currentIndex - 1);
+            }
+        }
+        
+        this.videoFeed.style.transition = 'transform 0.3s ease-out';
+        this.videoFeed.style.transform = 'translateY(0px)';
+        
+        setTimeout(() => {
+            this.videoFeed.style.transition = '';
+        }, 300);
+        
+        this.isSwiping = false;
+        this.isDragging = false;
+        this.dragY = 0;
+    }
+
+    handleMouseDown(e) {
+        this.startY = e.clientY;
+        this.currentY = this.startY;
+        this.isSwiping = true;
+        this.isDragging = true;
+        this.dragY = 0;
+    }
+
+    handleMouseMove(e) {
+        if (!this.isSwiping || !this.isDragging) return;
+        this.currentY = e.clientY;
+        this.dragY = this.currentY - this.startY;
+        
+        this.videoFeed.style.transform = `translateY(${this.dragY}px)`;
+    }
+
+    handleMouseUp(e) {
+        if (!this.isSwiping || !this.isDragging) return;
+        
+        const slideHeight = window.innerHeight;
+        const threshold = slideHeight * 0.15;
+        
+        if (Math.abs(this.dragY) > threshold) {
+            if (this.dragY < 0 && this.currentIndex < this.videos.length - 1) {
+                this.changeVideo(this.currentIndex + 1);
+            } else if (this.dragY > 0 && this.currentIndex > 0) {
+                this.changeVideo(this.currentIndex - 1);
+            }
+        }
+        
+        this.videoFeed.style.transition = 'transform 0.3s ease-out';
+        this.videoFeed.style.transform = 'translateY(0px)';
+        
+        setTimeout(() => {
+            this.videoFeed.style.transition = '';
+        }, 300);
+        
+        this.isSwiping = false;
+        this.isDragging = false;
+        this.dragY = 0;
+    }
+
+    handleMouseLeave(e) {
+        this.isSwiping = false;
+        this.isDragging = false;
+        this.dragY = 0;
+        this.videoFeed.style.transform = 'translateY(0px)';
+    }
+
+    async loadInitialVideos() {
+        try {
+            const streams = await streamManager.getStreams('all');
+            this.videos = streams;
+            this.renderVideos();
+            this.showVideo(0);
+            
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if (loadingOverlay) {
+                loadingOverlay.classList.add('hidden');
+            }
+            
+            this.updateTotalViewers(streams);
+            
+            // Setup real-time listener but prevent excessive re-renders
+            streamManager.listenToStreams((streams) => {
+                // Only update if videos actually changed
+                const currentIds = this.videos.map(v => v.id).sort();
+                const newIds = streams.map(v => v.id).sort();
+                
+                const videosChanged = JSON.stringify(currentIds) !== JSON.stringify(newIds);
+                
+                if (videosChanged) {
+                    console.log('Videos changed, updating feed');
+                    this.videos = streams;
+                    this.renderVideos();
+                    
+                    // Restore current video position if possible
+                    if (this.currentIndex >= 0 && this.currentIndex < this.videos.length) {
+                        const currentVideoId = this.videos[this.currentIndex]?.id;
+                        if (currentVideoId) {
+                            setTimeout(() => {
+                                this.showVideo(this.currentIndex);
+                            }, 100);
+                        }
+                    }
+                }
+                
+                this.updateTotalViewers(streams);
+            }, 'all');
+            
+        } catch (error) {
+            console.error('Error loading videos:', error);
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if (loadingOverlay) {
+                loadingOverlay.innerHTML = `
+                    <div style="text-align: center;">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 48px; margin-bottom: 20px;"></i>
+                        <div>Error loading videos</div>
+                        <button onclick="window.location.reload()" style="margin-top: 20px; padding: 10px 20px; background: #ff2d55; border: none; border-radius: 10px; color: white; cursor: pointer;">
+                            Retry
+                        </button>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    renderVideos() {
+        if (!this.videoFeed) return;
+        
+        // Prevent rapid re-renders
+        const now = Date.now();
+        if (isRendering || (now - lastRenderTime < 1000)) {
+            console.log('Skipping render - too frequent');
+            return;
+        }
+        
+        isRendering = true;
+        lastRenderTime = now;
+        
+        // Store current video state before clearing
+        const currentVideoId = this.currentIndex >= 0 && this.currentIndex < this.videos.length 
+            ? this.videos[this.currentIndex].id 
+            : null;
+        const wasPlaying = currentVideoId ? 
+            (this.videoElements.get(currentVideoId)?.videoElement?.paused === false) : false;
+        
+        // Clear only if necessary
+        if (this.videoFeed.children.length > 0) {
+            this.videoFeed.innerHTML = '';
+        }
+        this.videoElements.clear();
+        
+        this.videos.forEach((video, index) => {
+            const slide = document.createElement('div');
+            slide.className = 'video-slide';
+            slide.dataset.index = index;
+            slide.dataset.streamId = video.id;
+            
+            const thumbnailUrl = getVideoThumbnail(video);
+            const isLiked = likedStreams.has(video.id);
+            
+            slide.innerHTML = `
+                <div class="video-container">
+                    <video id="video-${video.id}" playsinline preload="none" 
+                           poster="${thumbnailUrl}" style="display: none;">
+                        <source src="${video.videoUrl}" type="video/mp4">
+                    </video>
+                    <div class="video-loading" id="loading-${video.id}">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <div>Loading video...</div>
+                    </div>
+                </div>
+                
+                <div class="video-info-overlay">
+                    <div class="video-author">
+                        <img src="${video.authorImage || 'images-defaultse-profile.jpg'}" 
+                             alt="${video.authorName}" 
+                             class="video-author-avatar">
+                        <div class="video-author-info">
+                            <div class="video-author-name">${video.authorName}</div>
+                        </div>
+                    </div>
+                    <div class="video-headline">${video.headline}</div>
+                    <div class="video-description">${video.description || ''}</div>
+                    <div class="video-category">${formatCategory(video.category)}</div>
+                </div>
+                
+                <div class="video-side-actions">
+                    <button class="side-action like-btn ${isLiked ? 'liked' : ''}" 
+                            data-stream-id="${video.id}">
+                        <div class="side-action-icon">
+                            <i class="${isLiked ? 'fas' : 'far'} fa-heart"></i>
+                        </div>
+                        <div class="side-action-count like-count">${video.likes || 0}</div>
+                    </button>
+                    
+                    <button class="side-action comment-btn" 
+                            data-stream-id="${video.id}">
+                        <div class="side-action-icon">
+                            <i class="far fa-comment"></i>
+                        </div>
+                        <div class="side-action-count comment-count">${video.commentsCount || 0}</div>
+                    </button>
+                    
+                    <button class="side-action share-btn" 
+                            data-stream-id="${video.id}">
+                        <div class="side-action-icon">
+                            <i class="far fa-share-square"></i>
+                        </div>
+                        <div class="side-action-count">Share</div>
+                    </button>
+                </div>
+            `;
+            
+            this.videoFeed.appendChild(slide);
+            this.videoElements.set(video.id, {
+                slide: slide,
+                videoElement: null,
+                loadingElement: slide.querySelector(`#loading-${video.id}`)
+            });
+            
+            // Add event listeners directly to prevent multiple bindings
+            const likeBtn = slide.querySelector('.like-btn');
+            const commentBtn = slide.querySelector('.comment-btn');
+            const shareBtn = slide.querySelector('.share-btn');
+            
+            if (likeBtn) {
+                likeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.handleLike(video.id, likeBtn);
+                });
+            }
+            
+            if (commentBtn) {
+                commentBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.openCommentsModal(video.id);
+                });
+            }
+            
+            if (shareBtn) {
+                shareBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.shareVideo(video.id);
+                });
+            }
+        });
+        
+        // Restore current video position
+        if (currentVideoId) {
+            const newIndex = this.videos.findIndex(v => v.id === currentVideoId);
+            if (newIndex >= 0) {
+                this.currentIndex = newIndex;
+                setTimeout(() => {
+                    this.showVideo(newIndex);
+                    if (wasPlaying) {
+                        setTimeout(() => this.playCurrentVideo(), 200);
+                    }
+                }, 50);
+            }
+        }
+        
+        isRendering = false;
+    }
+
+    showVideo(index) {
+        if (index < 0 || index >= this.videos.length) return;
+        
+        document.querySelectorAll('.video-slide').forEach(slide => {
+            slide.classList.remove('active', 'next');
+        });
+        
+        const currentSlide = document.querySelector(`.video-slide[data-index="${index}"]`);
+        if (currentSlide) {
+            currentSlide.classList.add('active');
+            this.currentIndex = index;
+            const videoId = this.videos[index].id;
+            this.loadAndPlayVideo(videoId);
+            
+            const nextSlide = document.querySelector(`.video-slide[data-index="${index + 1}"]`);
+            if (nextSlide) {
+                nextSlide.classList.add('next');
+            }
+        }
+    }
+
+    changeVideo(newIndex) {
+        if (newIndex < 0 || newIndex >= this.videos.length) return;
+        
+        this.pauseCurrentVideo();
+        
+        if (this.currentIndex >= 0 && this.currentIndex < this.videos.length) {
+            const prevVideoId = this.videos[this.currentIndex].id;
+            if (currentUser) {
+                streamManager.removeViewer(prevVideoId);
+            }
+        }
+        
+        this.showVideo(newIndex);
+        
+        const newVideoId = this.videos[newIndex].id;
+        if (currentUser) {
+            streamManager.addViewer(newVideoId);
+        }
+    }
+
+    async loadAndPlayVideo(videoId) {
+        const videoData = this.videoElements.get(videoId);
+        if (!videoData) return;
+        
+        const { slide, loadingElement } = videoData;
+        const videoElement = slide.querySelector(`#video-${videoId}`);
+        if (!videoElement) return;
+        
+        videoData.videoElement = videoElement;
+        
+        // Only pause other videos if they're playing
+        this.videoElements.forEach((data, id) => {
+            if (id !== videoId && data.videoElement && !data.videoElement.paused) {
+                data.videoElement.pause();
+                if (data.loadingElement) {
+                    data.loadingElement.style.display = 'none';
                 }
             }
         });
+        
+        if (!videoElement.dataset.listenersAdded) {
+            videoElement.addEventListener('loadeddata', () => {
+                if (loadingElement) {
+                    loadingElement.style.display = 'none';
+                }
+                videoElement.style.display = 'block';
+                this.playCurrentVideo();
+            });
+            
+            videoElement.addEventListener('canplay', () => {
+                if (loadingElement) {
+                    loadingElement.style.display = 'none';
+                }
+                videoElement.style.display = 'block';
+            });
+            
+            videoElement.addEventListener('waiting', () => {
+                if (loadingElement) {
+                    loadingElement.style.display = 'block';
+                }
+            });
+            
+            videoElement.addEventListener('playing', () => {
+                if (loadingElement) {
+                    loadingElement.style.display = 'none';
+                }
+            });
+            
+            videoElement.addEventListener('error', (e) => {
+                console.error('Video error:', e);
+                if (loadingElement) {
+                    loadingElement.innerHTML = `
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div>Failed to load video</div>
+                        <button onclick="this.retryVideo('${videoId}')" 
+                                style="margin-top: 10px; padding: 5px 10px; background: #ff2d55; border: none; border-radius: 5px; color: white; cursor: pointer;">
+                            Retry
+                        </button>
+                    `;
+                }
+            });
+            
+            videoElement.dataset.listenersAdded = 'true';
+        }
+        
+        if (loadingElement) {
+            loadingElement.style.display = 'block';
+            loadingElement.innerHTML = `
+                <i class="fas fa-spinner fa-spin"></i>
+                <div>Loading video...</div>
+            `;
+        }
+        
+        // Only reload if needed
+        if (!videoElement.src || videoElement.src !== this.videos.find(v => v.id === videoId)?.videoUrl) {
+            const video = this.videos.find(v => v.id === videoId);
+            if (video) {
+                videoElement.src = video.videoUrl;
+                videoElement.load();
+            }
+        } else if (videoElement.readyState >= 2) {
+            if (loadingElement) {
+                loadingElement.style.display = 'none';
+            }
+            videoElement.style.display = 'block';
+            this.playCurrentVideo();
+        }
     }
 
-    open(stream) {
-        if (!stream) {
+    playCurrentVideo() {
+        if (this.currentIndex >= 0 && this.currentIndex < this.videos.length) {
+            const videoId = this.videos[this.currentIndex].id;
+            const videoData = this.videoElements.get(videoId);
+            
+            if (videoData && videoData.videoElement) {
+                const playPromise = videoData.videoElement.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        console.log('Auto-play prevented:', error);
+                    });
+                }
+            }
+        }
+    }
+
+    pauseCurrentVideo() {
+        if (this.currentIndex >= 0 && this.currentIndex < this.videos.length) {
+            const videoId = this.videos[this.currentIndex].id;
+            const videoData = this.videoElements.get(videoId);
+            
+            if (videoData && videoData.videoElement) {
+                videoData.videoElement.pause();
+            }
+        }
+    }
+
+    retryVideo(videoId) {
+        const videoData = this.videoElements.get(videoId);
+        if (videoData && videoData.videoElement) {
+            const videoElement = videoData.videoElement;
+            videoElement.src = videoElement.src;
+            videoElement.load();
+        }
+    }
+
+    async handleLike(streamId, button) {
+        if (button.classList.contains('processing')) return;
+        button.classList.add('processing');
+        
+        try {
+            const result = await streamManager.handleLike(streamId, button);
+            
+            if (result) {
+                const likeCount = button.querySelector('.side-action-count');
+                const likeIcon = button.querySelector('.side-action-icon i');
+                
+                if (button.classList.contains('liked')) {
+                    button.classList.remove('liked');
+                    likeIcon.className = 'far fa-heart';
+                    if (likeCount) {
+                        const currentCount = parseInt(likeCount.textContent) || 0;
+                        likeCount.textContent = Math.max(0, currentCount - 1);
+                    }
+                } else {
+                    button.classList.add('liked');
+                    likeIcon.className = 'fas fa-heart';
+                    if (likeCount) {
+                        const currentCount = parseInt(likeCount.textContent) || 0;
+                        likeCount.textContent = currentCount + 1;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error liking video:', error);
+        } finally {
+            button.classList.remove('processing');
+        }
+    }
+
+    openCommentsModal(streamId) {
+        this.currentStreamId = streamId;
+        if (this.commentsModal) {
+            this.commentsModal.classList.add('active');
+            this.loadComments(streamId);
+        }
+    }
+
+    closeCommentsModal() {
+        if (this.commentsModal) {
+            this.commentsModal.classList.remove('active');
+            this.currentStreamId = null;
+        }
+        
+        // Clean up comment listener when modal is closed
+        if (this.currentStreamId && activeCommentListeners.has(this.currentStreamId)) {
+            const unsubscribe = activeCommentListeners.get(this.currentStreamId);
+            unsubscribe();
+            activeCommentListeners.delete(this.currentStreamId);
+        }
+    }
+
+    async loadComments(streamId) {
+        if (!this.modalCommentsList) return;
+
+        try {
+            await streamManager.loadComments(streamId, this.modalCommentsList);
+            this.modalCommentsList.scrollTop = this.modalCommentsList.scrollHeight;
+        } catch (error) {
+            console.error('Error loading comments:', error);
+            this.modalCommentsList.innerHTML = '<div class="error">Error loading comments</div>';
+        }
+    }
+
+    async handleAddComment() {
+        if (!this.currentStreamId || !this.modalCommentInput) return;
+
+        const commentText = this.modalCommentInput.value.trim();
+        if (!commentText) {
+            alert('Please enter a comment');
             return;
         }
 
-        this.currentStreamId = stream.id;
-
-        // Update modal content
-        document.getElementById('videoPlayerTitle').textContent = stream.headline;
-        document.getElementById('videoPlayerDescription').textContent = stream.description || 'No description available';
-        document.getElementById('videoPlayerViewers').textContent = stream.currentViewers || 0;
-
-        // Enhanced format info
-        const formatInfo = document.getElementById('videoFormatInfo');
-        let formatText = '';
-        
-        if (stream.videoType === 'cloudinary') {
-            if (stream.isPhoneVideo) {
-                formatText = `📱 Phone Video • ${stream.videoFileName || 'Uploaded video'}`;
-            } else if (stream.needsConversion) {
-                formatText = `📹 Uploaded Video • ${stream.videoFileName || 'Video file'}`;
-            } else {
-                formatText = `📹 Uploaded Video • ${stream.videoFileName || 'Video file'}`;
-            }
-        }
-        
-        formatInfo.textContent = formatText;
-
-        // Load video with enhanced error handling
-        const contentContainer = document.getElementById('videoPlayerContent');
-        
-        if (stream.videoType === 'cloudinary' && stream.videoUrl) {
-            this.loadCloudinaryVideo(stream, contentContainer);
-        } else {
-            contentContainer.innerHTML = `
-                <div class="video-placeholder">
-                    <i class="fas fa-exclamation-circle"></i>
-                    <p>Video format not supported</p>
-                </div>
-            `;
-        }
-
-        // Setup social actions
-        this.setupSocialActions(stream);
-
-        // Show modal
-        this.modal.style.display = 'flex';
-        document.body.style.overflow = 'hidden';
-
-        // Add viewer
-        if (currentUser) {
-            streamManager.addViewer(stream.id);
-        }
-
-        // Listen to viewer count
-        this.viewerUnsubscribe = streamManager.listenToViewerCount(stream.id, (viewerCount) => {
-            const viewersElement = document.getElementById('videoPlayerViewers');
-            if (viewersElement) {
-                viewersElement.textContent = viewerCount;
-            }
-        });
-    }
-
-    setupSocialActions(stream) {
-        const isLiked = likedStreams.has(stream.id);
-        
-        // Update like button
-        const likeBtn = document.getElementById('modalLikeBtn');
-        const likeCount = likeBtn.querySelector('.like-count');
-        const likeIcon = likeBtn.querySelector('i');
-        
-        likeCount.textContent = stream.likes || 0;
-        if (isLiked) {
-            likeBtn.classList.add('liked');
-            likeIcon.className = 'fas fa-heart';
-        } else {
-            likeBtn.classList.remove('liked');
-            likeIcon.className = 'far fa-heart';
-        }
-
-        // Update comment button
-        const commentBtn = document.getElementById('modalCommentBtn');
-        const commentCount = commentBtn.querySelector('.comment-count');
-        commentCount.textContent = stream.commentsCount || 0;
-
-        // Setup event listeners
-        this.setupSocialActionListeners(stream.id);
-    }
-
-    setupSocialActionListeners(streamId) {
-        const likeBtn = document.getElementById('modalLikeBtn');
-        const commentBtn = document.getElementById('modalCommentBtn');
-        const sendCommentBtn = document.getElementById('modalSendComment');
-        const commentInput = document.getElementById('modalCommentInput');
-
-        if (commentBtn) {
-            commentBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.toggleComments(streamId);
-            });
-        }
-
-        if (likeBtn) {
-            likeBtn.addEventListener('click', () => {
-                streamManager.handleLike(streamId, likeBtn);
-            });
-        }
-
-        if (sendCommentBtn) {
-            sendCommentBtn.addEventListener('click', () => {
-                streamManager.handleAddComment(streamId);
-            });
-        }
-
-        if (commentInput) {
-            commentInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    streamManager.handleAddComment(streamId);
-                }
-            });
-        }
-    }
-
-    toggleComments(streamId) {
-        const commentsSection = document.getElementById('modalCommentsSection');
-        if (commentsSection) {
-            if (commentsSection.style.display === 'none') {
-                commentsSection.style.display = 'block';
-                streamManager.loadComments(streamId);
-            } else {
-                commentsSection.style.display = 'none';
-            }
-        }
-    }
-
-    loadCloudinaryVideo(stream, container) {
-        container.innerHTML = `
-            <div class="cloudinary-video-container">
-                <div class="video-loading" id="videoLoading">
-                    <i class="fas fa-spinner fa-spin"></i><br>
-                    Loading video...
-                    ${stream.needsConversion ? '<div style="margin-top: 10px; font-size: 12px; color: #ffa500;">Processing video for better compatibility...</div>' : ''}
-                    ${stream.isPhoneVideo ? '<div style="margin-top: 10px; font-size: 12px;">Phone video - may take a moment to process</div>' : ''}
-                </div>
-                <div class="video-error" id="videoError" style="display: none;">
-                    <i class="fas fa-exclamation-triangle"></i><br>
-                    <div id="errorMessage">Failed to load video</div>
-                    <div id="errorDetails" style="font-size: 12px; margin: 10px 0;"></div>
-                    <button class="video-retry-button" onclick="videoPlayer.reloadCurrentVideo()">
-                        <i class="fas fa-redo"></i> Try Again
-                    </button>
-                    <div style="margin-top: 10px; font-size: 12px;">
-                        If this continues, try uploading the video again or use a different format.
-                    </div>
-                </div>
-                <video controls playsinline id="cloudinaryVideoPlayer" 
-                       style="width: 100%; height: 100%; display: none;"
-                       preload="metadata"
-                       crossorigin="anonymous">
-                    <source src="${stream.videoUrl}" type="video/mp4">
-                    <source src="${stream.videoUrl}" type="video/webm">
-                    <source src="${stream.videoUrl}" type="video/ogg">
-                    Your browser does not support the video tag.
-                </video>
-            </div>
-        `;
-
-        this.setupVideoPlayer(stream);
-    }
-
-    setupVideoPlayer(stream) {
-        const videoElement = document.getElementById('cloudinaryVideoPlayer');
-        const loadingElement = document.getElementById('videoLoading');
-        const errorElement = document.getElementById('videoError');
-        const errorMessage = document.getElementById('errorMessage');
-        const errorDetails = document.getElementById('errorDetails');
-
-        if (!videoElement) return;
-
-        this.currentVideoElement = videoElement;
-
-        // Show loading initially
-        loadingElement.style.display = 'block';
-        videoElement.style.display = 'none';
-        errorElement.style.display = 'none';
-
-        // Enhanced event listeners for video handling
-        videoElement.addEventListener('loadeddata', () => {
-            loadingElement.style.display = 'none';
-            videoElement.style.display = 'block';
-        });
-
-        videoElement.addEventListener('canplay', () => {
-            loadingElement.style.display = 'none';
-            videoElement.style.display = 'block';
-            
-            // Auto-play when ready
-            try {
-                const playPromise = videoElement.play();
-                if (playPromise !== undefined) {
-                    playPromise.catch(e => {
-                        // Auto-play prevented
-                    });
-                }
-            } catch (e) {
-                // Auto-play error
-            }
-        });
-
-        videoElement.addEventListener('waiting', () => {
-            loadingElement.style.display = 'block';
-        });
-
-        videoElement.addEventListener('playing', () => {
-            loadingElement.style.display = 'none';
-        });
-
-        videoElement.addEventListener('error', (e) => {
-            loadingElement.style.display = 'none';
-            errorElement.style.display = 'block';
-            videoElement.style.display = 'none';
-            
-            // Enhanced error messages for downloaded videos
-            let errorMsg = 'Failed to load video';
-            let detailsMsg = '';
-            
-            if (videoElement.error) {
-                switch(videoElement.error.code) {
-                    case videoElement.error.MEDIA_ERR_ABORTED:
-                        errorMsg = 'Video loading was aborted';
-                        break;
-                    case videoElement.error.MEDIA_ERR_NETWORK:
-                        errorMsg = 'Network error occurred while loading video';
-                        break;
-                    case videoElement.error.MEDIA_ERR_DECODE:
-                        errorMsg = 'Video format is not supported by your browser';
-                        detailsMsg = 'The video is being processed for better compatibility.';
-                        break;
-                    case videoElement.error.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                        errorMsg = 'Video format is not supported';
-                        detailsMsg = 'The video format may not be compatible with your browser. Try using a different browser or device.';
-                        break;
-                }
-            }
-            
-            // Special handling for downloaded videos
-            if (stream.needsConversion) {
-                detailsMsg = 'This video is being processed for better compatibility. If it still doesn\'t play, try uploading the original video file.';
-            }
-            
-            errorMessage.textContent = errorMsg;
-            if (detailsMsg) {
-                errorDetails.textContent = detailsMsg;
-                errorDetails.style.display = 'block';
-            } else {
-                errorDetails.style.display = 'none';
-            }
-        });
-
-        videoElement.addEventListener('stalled', () => {
-            loadingElement.style.display = 'block';
-        });
-
-        videoElement.addEventListener('canplaythrough', () => {
-            loadingElement.style.display = 'none';
-        });
-
-        // Enhanced load with multiple retry strategies
-        this.loadVideoWithRetry(videoElement, loadingElement, errorElement, stream, 0);
-    }
-
-    loadVideoWithRetry(videoElement, loadingElement, errorElement, stream, retryCount = 0) {
-        const maxRetries = 2;
-        
-        videoElement.load();
-        
-        // Enhanced timeout with progressive delays
-        const timeoutDuration = stream.needsConversion ? 45000 : 30000;
-        
-        const loadTimeout = setTimeout(() => {
-            if (loadingElement.style.display !== 'none' && videoElement.readyState < 2) {
-                if (retryCount < maxRetries) {
-                    this.loadVideoWithRetry(videoElement, loadingElement, errorElement, stream, retryCount + 1);
-                } else {
-                    loadingElement.style.display = 'none';
-                    errorElement.style.display = 'block';
-                    const errorMessage = document.getElementById('errorMessage');
-                    const errorDetails = document.getElementById('errorDetails');
-                    
-                    errorMessage.textContent = 'Video took too long to load';
-                    errorDetails.textContent = 'The video server may be busy. Please try again later.';
-                    errorDetails.style.display = 'block';
-                }
-            }
-        }, timeoutDuration);
-
-        // Clear timeout if video loads successfully
-        videoElement.addEventListener('canplay', () => {
-            clearTimeout(loadTimeout);
-        });
-    }
-
-    reloadCurrentVideo() {
-        if (this.currentVideoElement) {
-            const videoElement = this.currentVideoElement;
-            const loadingElement = document.getElementById('videoLoading');
-            const errorElement = document.getElementById('videoError');
-            
-            loadingElement.style.display = 'block';
-            errorElement.style.display = 'none';
-            videoElement.style.display = 'none';
-            
-            // Clear source and re-add to force reload
-            const currentTime = videoElement.currentTime;
-            const src = videoElement.src;
-            
-            videoElement.src = '';
-            videoElement.load();
-            
-            setTimeout(() => {
-                videoElement.src = src;
-                videoElement.currentTime = currentTime || 0;
-                videoElement.load();
+        try {
+            const success = await streamManager.handleAddComment(this.currentStreamId, commentText);
+            if (success) {
+                this.modalCommentInput.value = '';
                 
-                // Try to play
-                const playPromise = videoElement.play();
-                if (playPromise !== undefined) {
-                    playPromise.catch(e => {
-                        // Play after reload prevented
-                    });
+                // Update comment count on the video
+                const currentVideo = this.videos.find(v => v.id === this.currentStreamId);
+                if (currentVideo) {
+                    const commentCount = document.querySelector(`.comment-btn[data-stream-id="${this.currentStreamId}"] .side-action-count`);
+                    if (commentCount) {
+                        const currentCount = parseInt(commentCount.textContent) || 0;
+                        commentCount.textContent = currentCount + 1;
+                    }
+                    currentVideo.commentsCount = (currentVideo.commentsCount || 0) + 1;
                 }
-            }, 100);
-        }
-    }
-
-    toggleFullscreen() {
-        this.modal.classList.toggle('fullscreen');
-        const fullscreenBtn = document.getElementById('toggleFullscreen');
-        if (fullscreenBtn) {
-            const icon = fullscreenBtn.querySelector('i');
-            if (this.modal.classList.contains('fullscreen')) {
-                icon.className = 'fas fa-compress';
-                fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i> Exit Fullscreen';
-            } else {
-                icon.className = 'fas fa-expand';
-                fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i> Fullscreen';
             }
+        } catch (error) {
+            console.error('Error adding comment:', error);
+            alert('Error adding comment: ' + error.message);
         }
     }
 
-    close() {
-        this.modal.style.display = 'none';
-        document.body.style.overflow = '';
-        this.modal.classList.remove('fullscreen');
-
-        // Clean up video element
-        if (this.currentVideoElement) {
-            this.currentVideoElement.pause();
-            this.currentVideoElement.src = '';
-            this.currentVideoElement.load();
-            this.currentVideoElement = null;
+    shareVideo(streamId) {
+        const stream = this.videos.find(v => v.id === streamId);
+        if (!stream) return;
+        
+        const shareText = `Check out this video on WhipRoom: ${stream.headline}`;
+        const shareUrl = window.location.origin + '/stream.html';
+        
+        if (navigator.share) {
+            navigator.share({
+                title: stream.headline,
+                text: stream.description || shareText,
+                url: shareUrl
+            }).catch(error => {
+                console.log('Share cancelled or failed:', error);
+            });
+        } else {
+            navigator.clipboard.writeText(`${shareText}\n${shareUrl}`)
+                .then(() => alert('Link copied to clipboard!'))
+                .catch(err => console.error('Failed to copy:', err));
         }
+    }
 
-        if (this.currentStreamId && currentUser) {
-            streamManager.removeViewer(this.currentStreamId);
+    updateTotalViewers(streams) {
+        const totalViewersSpan = document.getElementById('totalViewers');
+        if (totalViewersSpan) {
+            const total = streams.reduce((sum, stream) => sum + (stream.currentViewers || 0), 0);
+            totalViewersSpan.textContent = total;
         }
+    }
 
-        if (this.viewerUnsubscribe) {
-            this.viewerUnsubscribe();
-            this.viewerUnsubscribe = null;
+    hideSwipeIndicator() {
+        setTimeout(() => {
+            const indicator = document.getElementById('swipeIndicator');
+            if (indicator) {
+                indicator.style.display = 'none';
+            }
+        }, 3000);
+    }
+
+    cleanup() {
+        this.pauseCurrentVideo();
+        
+        if (this.currentIndex >= 0 && this.currentIndex < this.videos.length && currentUser) {
+            const currentVideoId = this.videos[this.currentIndex].id;
+            streamManager.removeViewer(currentVideoId);
         }
-
-        this.currentStreamId = null;
+        
+        // Clean up all comment listeners
+        activeCommentListeners.forEach(unsubscribe => unsubscribe());
+        activeCommentListeners.clear();
     }
 }
-
-// Initialize Video Player
-const videoPlayer = new VideoPlayer();
 
 // Social Features Management
 function loadLikedStreams() {
@@ -1822,23 +1523,20 @@ function markStreamAsViewed(streamId) {
     saveViewedStreams();
 }
 
-// Get video thumbnail - FIXED VERSION
+// Get video thumbnail
 function getVideoThumbnail(stream) {
     if (!stream) {
         return 'images-defaultse-profile.jpg';
     }
     
-    // Use the thumbnail URL if available
     if (stream.thumbnailUrl && stream.thumbnailUrl !== 'images-defaultse-profile.jpg') {
         return stream.thumbnailUrl;
     }
     
-    // If no thumbnail but we have a Cloudinary video URL, generate one
     if (stream.videoType === 'cloudinary' && stream.videoUrl) {
         return streamManager.generateCloudinaryThumbnail(stream.videoUrl);
     }
     
-    // Fallback to default image
     return 'images-defaultse-profile.jpg';
 }
 
@@ -1848,7 +1546,6 @@ function initializeAuth() {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             if (user) {
                 currentUser = user;
-                // Load social data
                 loadLikedStreams();
                 loadViewedStreams();
                 unsubscribe();
@@ -1872,6 +1569,26 @@ function initializeAuth() {
     });
 }
 
+// Initialize TikTok feed
+async function initializeTikTokFeed() {
+    try {
+        await initializeAuth();
+        
+        // Only initialize TikTok feed if we're on the stream page and have the container
+        if (document.getElementById('tiktokContainer')) {
+            tiktokFeedInstance = new TikTokFeed();
+            window.tiktokFeedInstance = tiktokFeedInstance;
+            
+            // Initialize activity tracking
+            streamManager.initializeActivityTracking();
+            
+            console.log('TikTok feed initialized successfully');
+        }
+    } catch (error) {
+        console.error('Error initializing TikTok feed:', error);
+    }
+}
+
 // Initialize stream functionality based on current page
 async function initializeStreamPage() {
     const currentPage = window.location.pathname.split('/').pop().split('.')[0];
@@ -1887,7 +1604,12 @@ async function initializeStreamPage() {
             initializePostStreamPage();
             break;
         case 'stream':
-            initializeStreamsPage();
+            // Check if we should initialize TikTok feed or regular grid
+            if (document.getElementById('tiktokContainer')) {
+                initializeTikTokFeed();
+            } else {
+                initializeStreamsPage();
+            }
             break;
     }
 }
@@ -2070,17 +1792,17 @@ function initializePostStreamPage() {
     }
 }
 
-// Initialize streams page
+// Initialize streams page (grid view)
 function initializeStreamsPage() {
     const streamsContainer = document.getElementById('streamsContainer');
-    const filterButtons = document.querySelectorAll('.filter-btn');
-    const totalViewersCounter = document.getElementById('totalViewersCounter');
-    const totalViewersSpan = document.getElementById('totalViewers');
-    let currentCategory = 'all';
-
+    
     if (!streamsContainer) {
         return;
     }
+
+    // Original grid view (if still needed)
+    const filterButtons = document.querySelectorAll('.filter-btn');
+    let currentCategory = 'all';
 
     loadStreams(currentCategory);
 
@@ -2104,7 +1826,7 @@ function initializeStreamsPage() {
     streamManager.initializeActivityTracking();
 }
 
-// Load streams function
+// Load streams function for grid view
 function loadStreams(category) {
     const streamsContainer = document.getElementById('streamsContainer');
     if (!streamsContainer) return;
@@ -2132,7 +1854,7 @@ function loadStreams(category) {
         });
 }
 
-// Render streams function with proper phone video handling
+// Render streams function for grid view
 function renderStreams(streams) {
     const streamsContainer = document.getElementById('streamsContainer');
     if (!streamsContainer) return;
@@ -2152,29 +1874,12 @@ function renderStreams(streams) {
     }
 
     streamsContainer.innerHTML = streams.map(stream => {
-        const isCloudinaryVideo = stream.videoType === 'cloudinary';
-        const isPhoneVideo = stream.isPhoneVideo;
-        const isPortraitVideo = stream.isPortraitVideo;
         const isLiked = likedStreams.has(stream.id);
-        const needsConversion = stream.needsConversion;
-        
-        // Get the thumbnail URL - THIS IS THE KEY FIX
         const thumbnailUrl = getVideoThumbnail(stream);
-        
-        // Determine the appropriate CSS class for the video preview
-        let videoPreviewClass = 'video-preview-container';
-        if (isPhoneVideo && isPortraitVideo) {
-            videoPreviewClass += ' phone-video portrait-video';
-        } else if (isPhoneVideo) {
-            videoPreviewClass += ' phone-video';
-        }
-        if (needsConversion) {
-            videoPreviewClass += ' converted-video';
-        }
         
         return `
         <div class="stream-card" data-stream-id="${stream.id}">
-            <div class="${videoPreviewClass}" onclick="playStream('${stream.id}')">
+            <div class="video-preview-container" onclick="playStream('${stream.id}')">
                 <img src="${thumbnailUrl}" 
                      alt="${stream.headline}" 
                      class="video-preview"
@@ -2245,7 +1950,21 @@ function renderStreams(streams) {
         if (likeBtn) {
             likeBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                streamManager.handleLike(stream.id, likeBtn);
+                streamManager.handleLike(stream.id, likeBtn).then(result => {
+                    if (result) {
+                        const likeCount = likeBtn.querySelector('.like-count');
+                        const likeIcon = likeBtn.querySelector('i');
+                        
+                        likeCount.textContent = result.likes;
+                        if (result.isLiked) {
+                            likeBtn.classList.add('liked');
+                            likeIcon.className = 'fas fa-heart';
+                        } else {
+                            likeBtn.classList.remove('liked');
+                            likeIcon.className = 'far fa-heart';
+                        }
+                    }
+                });
             });
         }
 
@@ -2272,7 +1991,10 @@ function toggleStreamComments(streamId) {
     if (commentsSection) {
         if (commentsSection.style.display === 'none') {
             commentsSection.style.display = 'block';
-            streamManager.loadComments(streamId);
+            const commentsList = document.getElementById(`comments-list-${streamId}`);
+            if (commentsList) {
+                streamManager.loadComments(streamId, commentsList);
+            }
         } else {
             commentsSection.style.display = 'none';
         }
@@ -2281,7 +2003,10 @@ function toggleStreamComments(streamId) {
 
 // Handle add comment for stream cards
 function handleAddComment(streamId) {
-    if (!currentUser) return;
+    if (!currentUser) {
+        alert('Please login to add comments');
+        return;
+    }
 
     const commentInput = document.querySelector(`.comment-input[data-stream-id="${streamId}"]`);
     if (!commentInput) return;
@@ -2292,21 +2017,19 @@ function handleAddComment(streamId) {
         return;
     }
 
-    streamManager.handleAddComment(streamId);
-}
-
-// Play stream function
-function playStream(streamId) {
-    streamManager.getStreams('all').then(streams => {
-        const stream = streams.find(s => s.id === streamId);
-        if (stream) {
-            videoPlayer.open(stream);
-            markStreamAsViewed(streamId);
-        } else {
-            alert('Stream not found. Please try again.');
+    streamManager.handleAddComment(streamId, commentText).then(success => {
+        if (success) {
+            commentInput.value = '';
+            const commentsList = document.getElementById(`comments-list-${streamId}`);
+            if (commentsList) {
+                streamManager.loadComments(streamId, commentsList);
+            }
+            const commentCount = document.querySelector(`.comment-btn[data-stream-id="${streamId}"] .comment-count`);
+            if (commentCount) {
+                const currentCount = parseInt(commentCount.textContent) || 0;
+                commentCount.textContent = currentCount + 1;
+            }
         }
-    }).catch(error => {
-        alert('Error loading stream. Please try again.');
     });
 }
 
@@ -2358,7 +2081,7 @@ function setupLogout() {
                 await signOut(auth);
                 window.location.href = 'login.html';
             } catch (error) {
-                // Silently handle error
+                console.error('Error logging out:', error);
             }
         });
     }
@@ -2370,15 +2093,66 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     try {
         await initializeStreamPage();
+        
+        // Signal that initialization is complete
+        console.log('Stream.js initialization complete');
+        
+        // Hide loading overlay if it exists
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        if (loadingOverlay && !loadingOverlay.classList.contains('hidden')) {
+            setTimeout(() => {
+                loadingOverlay.classList.add('hidden');
+            }, 1000);
+        }
+        
     } catch (error) {
-        // Silently handle error
+        console.error('Error initializing stream page:', error);
+        
+        // Show error in loading overlay
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        if (loadingOverlay) {
+            loadingOverlay.innerHTML = `
+                <div style="text-align: center;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 48px; margin-bottom: 20px;"></i>
+                    <div>Error: ${error.message}</div>
+                    <button onclick="window.location.reload()" style="margin-top: 20px; padding: 10px 20px; background: #ff2d55; border: none; border-radius: 10px; color: white; cursor: pointer;">
+                        Retry
+                    </button>
+                </div>
+            `;
+        }
     }
 });
 
 // Export for use in other files
 window.streamManager = streamManager;
-window.playStream = playStream;
-window.videoPlayer = videoPlayer;
-window.toggleStreamComments = toggleStreamComments;
-window.handleAddComment = handleAddComment;
+window.tiktokFeedInstance = tiktokFeedInstance;
+
+// Make functions globally available for HTML onclick
+window.handleTikTokLike = (streamId, button) => {
+    if (tiktokFeedInstance) {
+        tiktokFeedInstance.handleLike(streamId, button);
+    }
+};
+
+window.openTikTokComments = (streamId) => {
+    if (tiktokFeedInstance) {
+        tiktokFeedInstance.openCommentsModal(streamId);
+    }
+};
+
+window.shareTikTokVideo = (streamId) => {
+    if (tiktokFeedInstance) {
+        tiktokFeedInstance.shareVideo(streamId);
+    }
+};
+
+window.retryTikTokVideo = (videoId) => {
+    if (tiktokFeedInstance) {
+        tiktokFeedInstance.retryVideo(videoId);
+    }
+};
+
 window.getVideoThumbnail = getVideoThumbnail;
+window.formatCategory = formatCategory;
+window.formatTime = formatTime;

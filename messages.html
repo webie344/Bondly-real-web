@@ -1,68 +1,127 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Messages - WhipRoom</title>
+    <title>Messages - Bondly</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Hide the top navbar */
+        .navbar {
+            display: none;
+        }
+        
+        /* Add space at bottom for the bottom nav */
+        body {
+            padding-bottom: 70px;
+        }
+        
+        /* Bottom Navigation - Simple style from stream.html */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0,0,0,0.9);
+            backdrop-filter: blur(20px);
+            display: flex;
+            justify-content: space-around;
+            padding: 10px 0;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            z-index: 1000;
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            color: #fff;
+            text-decoration: none;
+            opacity: 0.7;
+            transition: opacity 0.3s;
+            padding: 5px;
+            flex: 1;
+            max-width: 25%;
+        }
+
+        .nav-item:hover {
+            opacity: 1;
+        }
+
+        .nav-item.active {
+            opacity: 1;
+            color: #ff2d55;
+        }
+
+        .nav-icon {
+            font-size: 20px;
+        }
+
+        .nav-label {
+            font-size: 10px;
+            font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+        
+        /* Special styles for your original nav text fonts */
+        .discover-link .nav-label {
+            font-family: 'Dancing Script', cursive;
+            font-size: 11px;
+        }
+        
+        .messages-link .nav-label {
+            font-family: 'Pacifico', cursive;
+            font-size: 10px;
+        }
+        
+        .profile-link .nav-label {
+            font-family: 'Great Vibes', cursive;
+            font-size: 12px;
+        }
+        
+        .logout-link .nav-label {
+            font-family: 'Satisfy', cursive;
+            font-size: 10px;
+        }
+        
+        .dashboard-link .nav-label {
+            font-family: 'Parisienne', cursive;
+            font-size: 11px;
+        }
+        
+        /* Adjust messages container to account for removed top nav */
+        .messages-container {
+            padding-top: 20px;
+        }
+        
+        /* Message count badge */
+        .message-count-bottom {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background-color: #ff2d55;
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+        
+        .badge-container {
+            position: relative;
+            display: inline-block;
+        }
+    </style>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="navbar-container">
-            <a href="index.html" class="logo">WhipRoom</a>
-            <div class="nav-toggle" id="mobile-menu">
-                <span class="bar"></span>
-                <span class="bar"></span>
-                <span class="bar"></span>
-            </div>
-            <ul class="nav-menu">
-    <li class="nav-item">
-        <a href="mingle.html" class="nav-links">
-            <i class="fas fa-fire"></i>
-            <span class="nav-text" style="font-family: 'Dancing Script', cursive; font-size: 1.1rem;">Discover</span>
-        </a>
-    </li>
-    <li class="nav-item">
-        <a href="messages.html" class="nav-links">
-            <i class="fas fa-comments"></i>
-            <span class="nav-text" style="font-family: 'Pacifico', cursive; font-size: 1rem;">Messages</span>
-            <span class="message-count">0</span>
-        </a>
-    </li>
-    <li class="nav-item">
-        <a href="account.html" class="nav-links">
-            <i class="fas fa-user"></i>
-            <span class="nav-text" style="font-family: 'Great Vibes', cursive; font-size: 1.2rem;">Profile</span>
-        </a>
-    </li>
-              <li class="nav-item">
-                    <a href="stream.html" class="nav-links active">
-                        <i class="fas fa-play-circle"></i>
-                        <span class="nav-text" style="font-family: 'Great Vibes', cursive; font-size: 1.1rem;">Stream</span>
-                    </a>
-                </li>  
-    <li class="nav-item">
-        <a href="#" id="logoutBtn" class="nav-links">
-            <i class="fas fa-sign-out-alt"></i>
-            <span class="nav-text" style="font-family: 'Satisfy', cursive; font-size: 1rem;">Logout</span>
-        </a>
-    </li>
-    <li class="nav-item">
-        <a href="dashboard.html" class="nav-links">
-            <span class="nav-text" style="font-family: 'Parisienne', cursive; font-size: 1.1rem;">Dashboard</span>
-            <i class="fas fa-arrow-right"></i>
-        </a>
-    </li>
-                <li class="nav-item">
-                    <a href="groups.html" class="nav-links">
-                        <i class="fas fa-users"></i>
-                        <span>Groups</span>
-                    </a>
-                </li>
-</ul>
-        </div>
-    </nav>
 
     <div class="messages-container">
         <div class="messages-header">
@@ -77,12 +136,32 @@
             <!-- Message cards will be loaded here -->
         </div>
     </div>
-     <script type="module" src="call.js"></script>
+    
+    <!-- Bottom Navigation with YOUR original links -->
+    <div class="bottom-nav">
+        <a href="mingle.html" class="nav-item discover-link">
+            <i class="fas fa-fire nav-icon"></i>
+            <span class="nav-label">Discover</span>
+        </a>
+        <a href="messages.html" class="nav-item messages-link active">
+            <div class="badge-container">
+                <i class="fas fa-comments nav-icon"></i>
+                <span class="message-count-bottom">0</span>
+            </div>
+            <span class="nav-label">Messages</span>
+        </a>
+        <a href="account.html" class="nav-item profile-link">
+            <i class="fas fa-user nav-icon"></i>
+            <span class="nav-label">Profile</span>
+        </a>
+        <a href="dashboard.html" class="nav-item dashboard-link">
+            <i class="fas fa-arrow-right nav-icon"></i>
+            <span class="nav-label">Dashboard</span>
+        </a>
+    </div>
+
+    <script type="module" src="call.js"></script>
     <script type="module" src="app.js"></script>
     <script src="messages.js"></script>
-<!-- That's it! It auto-starts -->
-
-
-    
 </body>
 </html>
