@@ -1119,6 +1119,63 @@ async function handleLogout() {
     }
 }
 
+// NEW: Optimize message rendering during scroll
+function optimizeMessageRendering() {
+    const messagesContainer = document.getElementById('chatMessages');
+    if (!messagesContainer) return;
+    
+    // Track visible messages
+    let isScrolling = false;
+    let scrollTimer;
+    
+    // Function to get visible messages
+    function getVisibleMessages() {
+        const messages = messagesContainer.querySelectorAll('.message');
+        const visible = [];
+        const containerRect = messagesContainer.getBoundingClientRect();
+        
+        messages.forEach(message => {
+            const messageRect = message.getBoundingClientRect();
+            // Check if message is within viewport with some buffer
+            if (messageRect.bottom >= 0 && 
+                messageRect.top <= containerRect.height + 100) {
+                visible.push(message);
+            }
+        });
+        
+        return visible;
+    }
+    
+    // Handle scrolling
+    messagesContainer.addEventListener('scroll', () => {
+        isScrolling = true;
+        
+        // Clear any existing timer
+        clearTimeout(scrollTimer);
+        
+        // Set a timer to detect when scrolling stops
+        scrollTimer = setTimeout(() => {
+            isScrolling = false;
+            // Force a re-render of all visible messages
+            const visibleMessages = getVisibleMessages();
+            visibleMessages.forEach(msg => {
+                msg.style.transform = 'translateZ(0)';
+            });
+        }, 100);
+        
+        // During scrolling, ensure messages are visible
+        if (isScrolling) {
+            const visibleMessages = getVisibleMessages();
+            visibleMessages.forEach(msg => {
+                // Reset any problematic transforms
+                msg.style.transform = 'translateZ(0)';
+                msg.style.opacity = '1';
+                msg.style.willChange = 'auto';
+            });
+        }
+    });
+}
+
 // UPDATED: DOM Content Loaded with Service Worker and preloading
 document.addEventListener('DOMContentLoaded', async () => {
     // Try to register Service Worker (will fail gracefully if not supported)
@@ -1874,10 +1931,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             background: #f5f5f5;
         }
         
+        /* FIXED: Changed will-change property to prevent disappearing messages */
         .message {
             transition: transform 0.3s ease;
-            will-change: transform;
             touch-action: pan-y;
+            /* Added for better performance without causing disappearing messages */
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+            transform: translateZ(0); /* More conservative GPU acceleration */
         }
         
         .message-swipe-action {
@@ -2002,7 +2063,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             font-size: 16px;
         }
 
+        /* Improved chat container scrolling */
+        #chatMessages {
+            /* Ensure smooth scrolling */
+            -webkit-overflow-scrolling: touch;
+            scroll-behavior: auto; /* Use 'auto' for better control */
+            
+            /* Prevent momentum scrolling issues */
+            overflow-anchor: none;
+            
+            /* Better rendering */
+            transform: translateZ(0);
+            will-change: scroll-position; /* Less aggressive than transform */
+        }
 
+        /* Message optimizations for scrolling */
+        #chatMessages.scrolling .message {
+            transition: none;
+            animation: none;
         }
     `;
     document.head.appendChild(style);
@@ -3748,6 +3826,11 @@ function loadChatMessages(userId, partnerId) {
                 // NEW: Hide instant loading after data is loaded
                 hideInstantLoading();
                 
+                // Optimize message rendering for smooth scrolling
+                setTimeout(() => {
+                    optimizeMessageRendering();
+                }, 500);
+                
                 refreshUnreadMessageCount();
             },
             (error) => {
@@ -3822,6 +3905,21 @@ function updateMessagesDisplay(newMessages, currentUserId) {
         noMessagesDiv.textContent = 'No messages yet. Start the conversation!';
         messagesContainer.appendChild(noMessagesDiv);
     }
+    
+    // Add scroll handling for smooth scrolling
+    setTimeout(() => {
+        const messagesContainer = document.getElementById('chatMessages');
+        if (messagesContainer) {
+            let scrollTimer;
+            messagesContainer.addEventListener('scroll', () => {
+                messagesContainer.classList.add('scrolling');
+                clearTimeout(scrollTimer);
+                scrollTimer = setTimeout(() => {
+                    messagesContainer.classList.remove('scrolling');
+                }, 150);
+            });
+        }
+    }, 100);
 }
 
 // UPDATED: Add message function with offline support and optimistic updates
@@ -4012,6 +4110,8 @@ function displayCachedMessages(messages) {
     
     setTimeout(() => {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        // Optimize message rendering
+        optimizeMessageRendering();
     }, 100);
 }
 
@@ -4504,7 +4604,6 @@ async function loadProfiles(forceRefresh = false) {
 }
 
 // NEW: Display profiles in grid format
-// NEW: Display profiles in grid format
 function displayProfilesGrid() {
     const mingleGrid = document.getElementById('mingleGrid');
     if (!mingleGrid) return;
@@ -4565,7 +4664,6 @@ function displayProfilesGrid() {
         setupOnlineStatusListener(profile.id, `grid-status-${profile.id}`);
     });
 }
-
 
 // NEW: Handle like in grid view
 async function handleGridLike(profileId, likeButton) {
@@ -5041,6 +5139,19 @@ function initChatPage() {
         setupTypingIndicator();
         setupMessageLongPress();
         setupMessageSwipe();
+        
+        // Add scroll optimization
+        const messagesContainer = document.getElementById('chatMessages');
+        if (messagesContainer) {
+            let scrollTimer;
+            messagesContainer.addEventListener('scroll', () => {
+                messagesContainer.classList.add('scrolling');
+                clearTimeout(scrollTimer);
+                scrollTimer = setTimeout(() => {
+                    messagesContainer.classList.remove('scrolling');
+                }, 150);
+            });
+        }
     } else {
         showNotification('No chat selected', 'error');
         setTimeout(() => {

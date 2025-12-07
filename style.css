@@ -31,28 +31,52 @@
     box-sizing: border-box;
 }
 /* ===== SCROLLING FIXES ===== */
+/* Improve chat container scrolling */
+#chatMessages {
+    /* Ensure smooth scrolling */
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: auto; /* Use 'auto' for better control */
+    
+    /* Prevent momentum scrolling issues */
+    overflow-anchor: none;
+    
+    /* Better rendering */
+    transform: translateZ(0);
+    will-change: scroll-position; /* Less aggressive than transform */
+}
 
+/* Message optimizations */
+.message {
+    /* Remove heavy animations during scroll */
+    transition: none;
+    
+    /* Only add transitions when not scrolling */
+    will-change: auto;
+}
+
+/* Add a class for when scrolling */
+#chatMessages.scrolling .message {
+    transition: none;
+    animation: none;
+}
+
+/* JavaScript to detect scrolling */
+let scrollTimeout;
+messagesContainer.addEventListener('scroll', () => {
+    messagesContainer.classList.add('scrolling');
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(() => {
+        messagesContainer.classList.remove('scrolling');
+        // Re-enable transitions after scrolling stops
+        const messages = messagesContainer.querySelectorAll('.message');
+        messages.forEach(msg => {
+            msg.style.transition = 'transform 0.3s ease';
+        });
+    }, 150);
+});
 /* ===== FIX FOR VIDEO MESSA
 GE BACKGROUNDS ===== */
-/* ADD THIS AT THE END OF YOUR EXISTING CSS FILE */
 
-/* Fix for smooth scrolling and message persistence */
-#chatMessages, .chat-messages {
-    -webkit-overflow-scrolling: touch;
-    scroll-behavior: auto;
-    transform: translateZ(0);
-}
-
-.message {
-    contain: layout;
-    will-change: transform;
-    min-height: px;
-}
-
-.message-content {
-    position: relative;
-    z-index: 1;
-}
 /* Remove background from ALL message containers that contain videos */
 .message:has(.video-message),
 .message:has(.video-message) .message-content,
