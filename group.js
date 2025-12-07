@@ -104,6 +104,9 @@ class GroupChat {
         this.tempPrivateMessages = new Map(); // Store temporary private messages
         this.privateChatImageInput = null; // File input for private chat images
         
+        // Track sent message IDs to prevent duplicates
+        this.sentMessageIds = new Set();
+        
         this.setupAuthListener();
         this.createMessageContextMenu();
     }
@@ -1443,7 +1446,7 @@ class GroupChat {
         return true;
     }
 
-    // Send message to group (with image support and reply)
+    // Send message to group (with image support and reply) - FIXED to prevent duplicates
     async sendMessage(groupId, text = null, imageUrl = null, replyTo = null) {
         try {
             if (!this.firebaseUser || !this.currentUser) {
@@ -1453,6 +1456,18 @@ class GroupChat {
             if (!text && !imageUrl) {
                 throw new Error('Message cannot be empty');
             }
+            
+            // Generate a unique ID for this message to prevent duplicates
+            const messageId = `${groupId}_${this.firebaseUser.uid}_${Date.now()}`;
+            
+            // Check if this message was already sent
+            if (this.sentMessageIds.has(messageId)) {
+                console.log('Duplicate message prevented:', messageId);
+                return true;
+            }
+            
+            // Add to sent messages set
+            this.sentMessageIds.add(messageId);
             
             const messagesRef = collection(db, 'groups', groupId, 'messages');
             const messageData = {
@@ -1584,11 +1599,13 @@ class GroupChat {
         }
     }
 
-    // Listen for new messages
+    // Listen for new messages - FIXED to prevent duplicate listeners
     listenToMessages(groupId, callback) {
         try {
+            // Clean up previous listener
             if (this.unsubscribeMessages) {
                 this.unsubscribeMessages();
+                this.unsubscribeMessages = null;
             }
             
             const messagesRef = collection(db, 'groups', groupId, 'messages');
@@ -1619,6 +1636,7 @@ class GroupChat {
         try {
             if (this.unsubscribeMembers) {
                 this.unsubscribeMembers();
+                this.unsubscribeMembers = null;
             }
             
             const membersRef = collection(db, 'groups', groupId, 'members');
@@ -2098,6 +2116,7 @@ class GroupChat {
         }
         
         this.areListenersSetup = false;
+        this.sentMessageIds.clear(); // Clear sent message IDs
     }
 }
 
@@ -2828,18 +2847,47 @@ function initGroupPage() {
         window.location.href = 'groups.html';
     });
     
-    // Sidebar toggle (for mobile)
-    sidebarToggle.addEventListener('click', () => {
-        if (sidebar) {
-            sidebar.classList.toggle('active');
-        }
-    });
-    
-    // Info button
-    if (infoBtn) {
-        infoBtn.addEventListener('click', () => {
+    // Sidebar toggle (for mobile) - FIXED
+    if (sidebarToggle) {
+        // Remove existing event listeners first
+        const newToggle = sidebarToggle.cloneNode(true);
+        sidebarToggle.parentNode.replaceChild(newToggle, sidebarToggle);
+        
+        // Get fresh reference
+        const freshToggle = document.getElementById('sidebarToggle');
+        
+        freshToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            
             if (sidebar) {
-                sidebar.classList.toggle('active');
+                const isActive = sidebar.classList.contains('active');
+                if (isActive) {
+                    sidebar.classList.remove('active');
+                    removeSidebarOverlay();
+                } else {
+                    sidebar.classList.add('active');
+                    createSidebarOverlay();
+                }
+            }
+        });
+    }
+    
+    // Info button - FIXED
+    if (infoBtn) {
+        infoBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            
+            if (sidebar) {
+                const isActive = sidebar.classList.contains('active');
+                if (isActive) {
+                    sidebar.classList.remove('active');
+                    removeSidebarOverlay();
+                } else {
+                    sidebar.classList.add('active');
+                    createSidebarOverlay();
+                }
             }
         });
     }
@@ -3178,6 +3226,43 @@ function initGroupPage() {
         }
     }
     
+    // Create sidebar overlay
+    function createSidebarOverlay() {
+        // Remove existing overlay if any
+        removeSidebarOverlay();
+        
+        const overlay = document.createElement('div');
+        overlay.id = 'sidebarOverlay';
+        overlay.className = 'sidebar-overlay';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+            display: block;
+        `;
+        
+        overlay.addEventListener('click', () => {
+            if (sidebar) {
+                sidebar.classList.remove('active');
+                removeSidebarOverlay();
+            }
+        });
+        
+        document.body.appendChild(overlay);
+    }
+    
+    // Remove sidebar overlay
+    function removeSidebarOverlay() {
+        const overlay = document.getElementById('sidebarOverlay');
+        if (overlay) {
+            overlay.remove();
+        }
+    }
+    
     // Setup real-time listeners
     function setupListeners() {
         // Don't setup listeners if already set up
@@ -3239,6 +3324,7 @@ function initGroupPage() {
         // Clean up interval on page unload
         window.addEventListener('beforeunload', () => {
             clearInterval(activeInterval);
+            removeSidebarOverlay();
         });
         
         groupChat.areListenersSetup = true;
@@ -3514,6 +3600,7 @@ function initGroupPage() {
     // Clean up on page unload
     window.addEventListener('beforeunload', () => {
         groupChat.cleanup();
+        removeSidebarOverlay();
     });
     
     // Add image modal function to window
@@ -4439,11 +4526,28 @@ function initChatPage() {
         window.location.href = 'message.html';
     });
     
-    // Sidebar toggle
+    // Sidebar toggle - FIXED
     if (sidebarToggle) {
-        sidebarToggle.addEventListener('click', () => {
+        // Remove existing event listeners first
+        const newToggle = sidebarToggle.cloneNode(true);
+        sidebarToggle.parentNode.replaceChild(newToggle, sidebarToggle);
+        
+        // Get fresh reference
+        const freshToggle = document.getElementById('sidebarToggle');
+        
+        freshToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            
             if (sidebar) {
-                sidebar.classList.toggle('active');
+                const isActive = sidebar.classList.contains('active');
+                if (isActive) {
+                    sidebar.classList.remove('active');
+                    removeSidebarOverlay();
+                } else {
+                    sidebar.classList.add('active');
+                    createSidebarOverlay();
+                }
             }
         });
     }
@@ -4759,38 +4863,38 @@ function initChatPage() {
     }
     
     async function sendMessage() {
-    const text = messageInput.value.trim();
-    
-    if (!text) return;
-    
-    sendBtn.disabled = true;
-    sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-    
-    try {
-        // Send with reply if replying
-        await groupChat.sendPrivateMessage(
-            partnerId, 
-            text, 
-            null, 
-            groupChat.replyingToMessage?.id
-        );
+        const text = messageInput.value.trim();
         
-        // Clear input AND reply after sending
-        messageInput.value = '';
-        messageInput.style.height = 'auto';
-        messageInput.dispatchEvent(new Event('input'));
+        if (!text) return;
         
-        // CLEAR THE REPLY AFTER SENDING
-        groupChat.clearReply();
+        sendBtn.disabled = true;
+        sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         
-    } catch (error) {
-        console.error('Error sending message:', error);
-        alert('Failed to send message');
-    } finally {
-        sendBtn.disabled = false;
-        sendBtn.innerHTML = 'Send';
+        try {
+            // Send with reply if replying
+            await groupChat.sendPrivateMessage(
+                partnerId, 
+                text, 
+                null, 
+                groupChat.replyingToMessage?.id
+            );
+            
+            // Clear input AND reply after sending
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
+            messageInput.dispatchEvent(new Event('input'));
+            
+            // CLEAR THE REPLY AFTER SENDING
+            groupChat.clearReply();
+            
+        } catch (error) {
+            console.error('Error sending message:', error);
+            alert('Failed to send message');
+        } finally {
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = 'Send';
+        }
     }
-}
     
     function formatTime(date) {
         if (!(date instanceof Date)) {
@@ -4814,9 +4918,47 @@ function initChatPage() {
         }
     }
     
+    // Create sidebar overlay for private chat
+    function createSidebarOverlay() {
+        // Remove existing overlay if any
+        removeSidebarOverlay();
+        
+        const overlay = document.createElement('div');
+        overlay.id = 'sidebarOverlay';
+        overlay.className = 'sidebar-overlay';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+            display: block;
+        `;
+        
+        overlay.addEventListener('click', () => {
+            if (sidebar) {
+                sidebar.classList.remove('active');
+                removeSidebarOverlay();
+            }
+        });
+        
+        document.body.appendChild(overlay);
+    }
+    
+    // Remove sidebar overlay
+    function removeSidebarOverlay() {
+        const overlay = document.getElementById('sidebarOverlay');
+        if (overlay) {
+            overlay.remove();
+        }
+    }
+    
     // Clean up on page unload
     window.addEventListener('beforeunload', () => {
         groupChat.cleanup();
+        removeSidebarOverlay();
     });
     
     // Add image modal function to window (same as group page)
