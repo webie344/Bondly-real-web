@@ -68,6 +68,8 @@ const AVATAR_OPTIONS = [
 const GROUP_USER_KEY = 'group_user_data_';
 const JOINED_GROUPS_KEY = 'joined_groups_';
 const PROFILE_SETUP_KEY = 'profile_setup_';
+const PRIVATE_CHATS_KEY = 'private_chats_';
+const UNREAD_MESSAGES_KEY = 'unread_messages_';
 
 // Group chat class
 class GroupChat {
@@ -75,9 +77,12 @@ class GroupChat {
         this.currentUser = null;
         this.firebaseUser = null;
         this.currentGroupId = null;
+        this.currentChatPartnerId = null;
         this.unsubscribeMessages = null;
         this.unsubscribeMembers = null;
+        this.unsubscribePrivateMessages = null;
         this.unsubscribeAuth = null;
+        this.unsubscribePrivateChats = null;
         
         // Reply functionality variables
         this.replyingToMessage = null;
@@ -88,8 +93,463 @@ class GroupChat {
         // Track if listeners are already set up
         this.areListenersSetup = false;
         
+        // Private messaging
+        this.privateChats = new Map();
+        this.unreadMessages = new Map();
+        
+        // Track if messages are being loaded
+        this.isLoadingMessages = false;
+        
+        // Add these for private chat image support
+        this.tempPrivateMessages = new Map(); // Store temporary private messages
+        this.privateChatImageInput = null; // File input for private chat images
+        
         this.setupAuthListener();
         this.createMessageContextMenu();
+    }
+
+    // ==================== USER PROFILE FUNCTIONS ====================
+
+    // Get user profile by ID
+    async getUserProfile(userId) {
+        try {
+            const userRef = doc(db, 'group_users', userId);
+            const userSnap = await getDoc(userRef);
+            
+            if (userSnap.exists()) {
+                const userData = userSnap.data();
+                return {
+                    id: userId,
+                    name: userData.displayName || 'User',
+                    avatar: userData.avatar || AVATAR_OPTIONS[0],
+                    bio: userData.bio || 'No bio available.',
+                    email: userData.email || '',
+                    lastSeen: userData.lastSeen ? 
+                        (userData.lastSeen.toDate ? userData.lastSeen.toDate() : userData.lastSeen) : 
+                        new Date(),
+                    createdAt: userData.createdAt ? 
+                        (userData.createdAt.toDate ? userData.createdAt.toDate() : userData.createdAt) : 
+                        new Date()
+                };
+            }
+            return null;
+        } catch (error) {
+            console.error('Error getting user profile:', error);
+            return null;
+        }
+    }
+
+    // Get mutual groups between two users
+    async getMutualGroups(userId1, userId2) {
+        try {
+            // Get all groups user1 is in
+            const groupsRef = collection(db, 'groups');
+            const user1Groups = [];
+            const querySnapshot = await getDocs(groupsRef);
+            
+            for (const docSnap of querySnapshot.docs) {
+                const memberRef = doc(db, 'groups', docSnap.id, 'members', userId1);
+                const memberSnap = await getDoc(memberRef);
+                if (memberSnap.exists()) {
+                    user1Groups.push(docSnap.id);
+                }
+            }
+            
+            // Check which groups user2 is also in
+            const mutualGroups = [];
+            for (const groupId of user1Groups) {
+                const memberRef = doc(db, 'groups', groupId, 'members', userId2);
+                const memberSnap = await getDoc(memberRef);
+                if (memberSnap.exists()) {
+                    // Get group info
+                    const groupRef = doc(db, 'groups', groupId);
+                    const groupSnap = await getDoc(groupRef);
+                    if (groupSnap.exists()) {
+                        const groupData = groupSnap.data();
+                        mutualGroups.push({
+                            id: groupId,
+                            name: groupData.name,
+                            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(groupData.name)}`,
+                            memberCount: groupData.memberCount || 0,
+                            description: groupData.description || ''
+                        });
+                    }
+                }
+            }
+            
+            return mutualGroups;
+        } catch (error) {
+            console.error('Error getting mutual groups:', error);
+            return [];
+        }
+    }
+
+    // ==================== PRIVATE MESSAGING FUNCTIONS ====================
+
+    // Get or create private chat ID
+    getPrivateChatId(userId1, userId2) {
+        const ids = [userId1, userId2].sort();
+        return `private_${ids[0]}_${ids[1]}`;
+    }
+
+    // Send private message (with image and reply support)
+    async sendPrivateMessage(toUserId, text = null, imageUrl = null, replyTo = null) {
+        try {
+            if (!this.firebaseUser || !this.currentUser) {
+                throw new Error('You must be logged in to send messages');
+            }
+            
+            if (!text && !imageUrl) {
+                throw new Error('Message cannot be empty');
+            }
+            
+            const chatId = this.getPrivateChatId(this.firebaseUser.uid, toUserId);
+            const messagesRef = collection(db, 'private_chats', chatId, 'messages');
+            
+            const messageData = {
+                senderId: this.firebaseUser.uid,
+                senderName: this.currentUser.name,
+                senderAvatar: this.currentUser.avatar,
+                timestamp: serverTimestamp(),
+                read: false
+            };
+            
+            // Add reply if provided
+            if (replyTo) {
+                messageData.replyTo = replyTo;
+            }
+            
+            // Add text if provided
+            if (text) {
+                messageData.text = text.trim();
+            }
+            
+            // Add image if provided
+            if (imageUrl) {
+                messageData.imageUrl = imageUrl;
+                messageData.type = 'image';
+            }
+            
+            await addDoc(messagesRef, messageData);
+            
+            // Update last message in chat metadata
+            const chatRef = doc(db, 'private_chats', chatId);
+            await setDoc(chatRef, {
+                participants: [this.firebaseUser.uid, toUserId],
+                lastMessage: {
+                    text: text ? text.trim() : '📷 Image',
+                    senderId: this.firebaseUser.uid,
+                    senderName: this.currentUser.name,
+                    timestamp: serverTimestamp()
+                },
+                updatedAt: serverTimestamp()
+            }, { merge: true });
+            
+            return true;
+        } catch (error) {
+            console.error('Error sending private message:', error);
+            throw error;
+        }
+    }
+
+    // Send private image message
+    async sendPrivateImageMessage(toUserId, file, replyTo = null) {
+        try {
+            // Validate file
+            this.validateImageFile(file);
+            
+            // Show uploading indicator
+            const tempMessageId = 'temp_private_image_' + Date.now();
+            this.showTempPrivateImageMessage(toUserId, file, tempMessageId);
+            
+            // Upload to Cloudinary
+            const imageUrl = await this.uploadImageToCloudinary(file);
+            
+            // Send message with image URL
+            await this.sendPrivateMessage(toUserId, null, imageUrl, replyTo);
+            
+            // Remove temp message
+            this.removeTempPrivateMessage(tempMessageId);
+            
+            return true;
+        } catch (error) {
+            console.error('Error sending private image message:', error);
+            throw error;
+        }
+    }
+
+    // Show temporary private image message while uploading
+    showTempPrivateImageMessage(toUserId, file, tempId) {
+        if (this.currentChatPartnerId === toUserId) {
+            const tempImageUrl = URL.createObjectURL(file);
+            this.tempPrivateMessages.set(tempId, {
+                id: tempId,
+                senderId: this.firebaseUser.uid,
+                senderName: this.currentUser.name,
+                senderAvatar: this.currentUser.avatar,
+                imageUrl: tempImageUrl,
+                timestamp: new Date().toISOString(),
+                type: 'image',
+                status: 'uploading'
+            });
+            
+            // Dispatch event for UI update
+            const event = new CustomEvent('tempPrivateImageMessage', { 
+                detail: { 
+                    tempId,
+                    message: this.tempPrivateMessages.get(tempId),
+                    partnerId: toUserId 
+                } 
+            });
+            document.dispatchEvent(event);
+        }
+    }
+
+    // Remove temporary private message
+    removeTempPrivateMessage(tempId) {
+        this.tempPrivateMessages.delete(tempId);
+        const event = new CustomEvent('removeTempPrivateMessage', { detail: { tempId } });
+        document.dispatchEvent(event);
+    }
+
+    // Get private chat messages
+    async getPrivateMessages(otherUserId, limitCount = 50) {
+        try {
+            const chatId = this.getPrivateChatId(this.firebaseUser.uid, otherUserId);
+            const messagesRef = collection(db, 'private_chats', chatId, 'messages');
+            const q = query(messagesRef, orderBy('timestamp', 'desc'), limit(limitCount));
+            const querySnapshot = await getDocs(q);
+            
+            const messages = [];
+            querySnapshot.forEach(doc => {
+                const data = doc.data();
+                messages.push({ 
+                    id: doc.id, 
+                    ...data,
+                    timestamp: data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate() : data.timestamp) : new Date()
+                });
+            });
+            
+            // Add any temporary messages for this chat
+            this.tempPrivateMessages.forEach((tempMsg, tempId) => {
+                // Only add if it belongs to this chat and hasn't been sent yet
+                if (!messages.some(m => m.id === tempId)) {
+                    messages.push(tempMsg);
+                }
+            });
+            
+            return messages.reverse();
+        } catch (error) {
+            console.error('Error getting private messages:', error);
+            return [];
+        }
+    }
+
+    // Listen to private chat messages
+    listenToPrivateMessages(otherUserId, callback) {
+        try {
+            if (this.unsubscribePrivateMessages) {
+                this.unsubscribePrivateMessages();
+            }
+            
+            const chatId = this.getPrivateChatId(this.firebaseUser.uid, otherUserId);
+            const messagesRef = collection(db, 'private_chats', chatId, 'messages');
+            const q = query(messagesRef, orderBy('timestamp', 'asc'));
+            
+            this.unsubscribePrivateMessages = onSnapshot(q, (snapshot) => {
+                const messages = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    messages.push({ 
+                        id: doc.id, 
+                        ...data,
+                        timestamp: data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate() : data.timestamp) : new Date()
+                    });
+                });
+                
+                // Add any temporary messages for this chat
+                this.tempPrivateMessages.forEach((tempMsg, tempId) => {
+                    // Only add if it belongs to this chat and hasn't been sent yet
+                    if (!messages.some(m => m.id === tempId)) {
+                        messages.push(tempMsg);
+                    }
+                });
+                
+                callback(messages);
+            });
+            
+            return this.unsubscribePrivateMessages;
+        } catch (error) {
+            console.error('Error listening to private messages:', error);
+            throw error;
+        }
+    }
+
+    // Get all private chats for current user
+    async getPrivateChats() {
+        try {
+            if (!this.firebaseUser) return [];
+            
+            const privateChatsRef = collection(db, 'private_chats');
+            const q = query(privateChatsRef, where('participants', 'array-contains', this.firebaseUser.uid));
+            const querySnapshot = await getDocs(q);
+            
+            const chats = [];
+            
+            for (const docSnap of querySnapshot.docs) {
+                const data = docSnap.data();
+                const otherUserId = data.participants.find(id => id !== this.firebaseUser.uid);
+                
+                if (otherUserId) {
+                    // Get user profile
+                    const userProfile = await this.getUserProfile(otherUserId);
+                    
+                    if (userProfile) {
+                        // Get unread count
+                        const unreadCount = await this.getUnreadMessageCount(docSnap.id, otherUserId);
+                        
+                        chats.push({
+                            id: docSnap.id,
+                            chatId: docSnap.id,
+                            userId: otherUserId,
+                            userName: userProfile.name,
+                            userAvatar: userProfile.avatar,
+                            lastMessage: data.lastMessage || null,
+                            updatedAt: data.updatedAt ? 
+                                (data.updatedAt.toDate ? data.updatedAt.toDate() : data.updatedAt) : 
+                                new Date(),
+                            unreadCount: unreadCount
+                        });
+                    }
+                }
+            }
+            
+            // Sort by last update
+            chats.sort((a, b) => b.updatedAt - a.updatedAt);
+            
+            return chats;
+        } catch (error) {
+            console.error('Error getting private chats:', error);
+            return [];
+        }
+    }
+
+    // Get unread message count for a chat - FIXED VERSION (no index required)
+    async getUnreadMessageCount(chatId, otherUserId) {
+        try {
+            const messagesRef = collection(db, 'private_chats', chatId, 'messages');
+            
+            // Get ALL messages and filter client-side to avoid index requirement
+            const q = query(messagesRef, orderBy('timestamp', 'desc'));
+            const querySnapshot = await getDocs(q);
+            
+            let unreadCount = 0;
+            querySnapshot.forEach(doc => {
+                const data = doc.data();
+                // Filter client-side
+                if (data.senderId === otherUserId && data.read === false) {
+                    unreadCount++;
+                }
+            });
+            
+            return unreadCount;
+        } catch (error) {
+            console.error('Error getting unread count:', error);
+            return 0;
+        }
+    }
+
+    // Mark messages as read - FIXED VERSION (no index required)
+    async markMessagesAsRead(chatId, senderId) {
+        try {
+            const messagesRef = collection(db, 'private_chats', chatId, 'messages');
+            
+            // Get ALL messages and filter client-side
+            const q = query(messagesRef);
+            const querySnapshot = await getDocs(q);
+            const batch = writeBatch(db);
+            let hasUpdates = false;
+            
+            querySnapshot.forEach(docSnap => {
+                const data = docSnap.data();
+                // Filter client-side
+                if (data.senderId === senderId && data.read === false) {
+                    batch.update(docSnap.ref, { read: true });
+                    hasUpdates = true;
+                }
+            });
+            
+            if (hasUpdates) {
+                await batch.commit();
+            }
+            
+            return true;
+        } catch (error) {
+            console.error('Error marking messages as read:', error);
+            return false;
+        }
+    }
+
+    // ==================== MESSAGE HISTORY FUNCTIONS ====================
+
+    // Get recent group chats with new message counts
+    async getGroupChatsWithUnread() {
+        try {
+            if (!this.firebaseUser) return [];
+            
+            // Get all groups user is a member of
+            const groupsRef = collection(db, 'groups');
+            const querySnapshot = await getDocs(groupsRef);
+            
+            const groupChats = [];
+            
+            for (const docSnap of querySnapshot.docs) {
+                const memberRef = doc(db, 'groups', docSnap.id, 'members', this.firebaseUser.uid);
+                const memberSnap = await getDoc(memberRef);
+                
+                if (memberSnap.exists()) {
+                    const groupData = docSnap.data();
+                    
+                    // Get last message
+                    const messagesRef = collection(db, 'groups', docSnap.id, 'messages');
+                    const lastMessageQuery = query(messagesRef, orderBy('timestamp', 'desc'), limit(1));
+                    const lastMessageSnap = await getDocs(lastMessageQuery);
+                    
+                    let lastMessage = null;
+                    if (!lastMessageSnap.empty) {
+                        const msgData = lastMessageSnap.docs[0].data();
+                        lastMessage = {
+                            text: msgData.text || '📷 Image',
+                            senderName: msgData.senderName || 'User',
+                            timestamp: msgData.timestamp ? 
+                                (msgData.timestamp.toDate ? msgData.timestamp.toDate() : msgData.timestamp) : 
+                                new Date()
+                        };
+                    }
+                    
+                    groupChats.push({
+                        id: docSnap.id,
+                        name: groupData.name,
+                        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(groupData.name)}`,
+                        lastMessage: lastMessage,
+                        memberCount: groupData.memberCount || 0,
+                        unreadCount: 0 // Group chats don't track unread yet
+                    });
+                }
+            }
+            
+            // Sort by last message time
+            groupChats.sort((a, b) => {
+                const timeA = a.lastMessage ? a.lastMessage.timestamp : new Date(0);
+                const timeB = b.lastMessage ? b.lastMessage.timestamp : new Date(0);
+                return timeB - timeA;
+            });
+            
+            return groupChats;
+        } catch (error) {
+            console.error('Error getting group chats:', error);
+            return [];
+        }
     }
 
     // ==================== INVITE LINK FUNCTIONS ====================
@@ -495,7 +955,7 @@ class GroupChat {
                 console.log('User logged out');
                 
                 // Redirect to login if on protected page
-                const protectedPages = ['create-group', 'group', 'admin-groups'];
+                const protectedPages = ['create-group', 'group', 'admin-groups', 'user', 'chat', 'messages', 'chats'];
                 const currentPage = window.location.pathname.split('/').pop().split('.')[0];
                 
                 if (protectedPages.includes(currentPage)) {
@@ -1622,6 +2082,16 @@ class GroupChat {
             this.unsubscribeMembers = null;
         }
         
+        if (this.unsubscribePrivateMessages) {
+            this.unsubscribePrivateMessages();
+            this.unsubscribePrivateMessages = null;
+        }
+        
+        if (this.unsubscribePrivateChats) {
+            this.unsubscribePrivateChats();
+            this.unsubscribePrivateChats = null;
+        }
+        
         if (this.unsubscribeAuth) {
             this.unsubscribeAuth();
             this.unsubscribeAuth = null;
@@ -1657,6 +2127,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             case 'join':
                 initJoinPage();
+                break;
+            case 'user':
+                initUserPage();
+                break;
+            case 'chats':
+                initChatPage();
+                break;
+            case 'message':
+                initMessagesPage();
                 break;
             default:
                 // For pages that don't need auth check
@@ -2351,13 +2830,19 @@ function initGroupPage() {
     
     // Sidebar toggle (for mobile)
     sidebarToggle.addEventListener('click', () => {
-        sidebar.classList.toggle('active');
+        if (sidebar) {
+            sidebar.classList.toggle('active');
+        }
     });
     
     // Info button
-    infoBtn.addEventListener('click', () => {
-        sidebar.classList.toggle('active');
-    });
+    if (infoBtn) {
+        infoBtn.addEventListener('click', () => {
+            if (sidebar) {
+                sidebar.classList.toggle('active');
+            }
+        });
+    }
     
     // Message input events
     messageInput.addEventListener('input', () => {
@@ -2468,20 +2953,22 @@ function initGroupPage() {
             const groupAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(groupData.name)}&backgroundColor=00897b&backgroundType=gradientLinear`;
             
             // Update UI with group info
-            groupAvatar.src = groupAvatarUrl;
-            groupNameSidebar.textContent = groupData.name;
-            groupMembersCount.textContent = `${groupData.memberCount || 0} members`;
-            chatTitle.textContent = groupData.name;
-            chatSubtitle.textContent = groupData.description;
+            if (groupAvatar) groupAvatar.src = groupAvatarUrl;
+            if (groupNameSidebar) groupNameSidebar.textContent = groupData.name;
+            if (groupMembersCount) groupMembersCount.textContent = `${groupData.memberCount || 0} members`;
+            if (chatTitle) chatTitle.textContent = groupData.name;
+            if (chatSubtitle) chatSubtitle.textContent = groupData.description;
             
             // Update rules
-            rulesList.innerHTML = '';
-            (groupData.rules || []).forEach(rule => {
-                const li = document.createElement('li');
-                li.className = 'rule-item';
-                li.innerHTML = `<i class="fas fa-check-circle"></i><span>${rule}</span>`;
-                rulesList.appendChild(li);
-            });
+            if (rulesList) {
+                rulesList.innerHTML = '';
+                (groupData.rules || []).forEach(rule => {
+                    const li = document.createElement('li');
+                    li.className = 'rule-item';
+                    li.innerHTML = `<i class="fas fa-check-circle"></i><span>${rule}</span>`;
+                    rulesList.appendChild(li);
+                });
+            }
             
             // Add invite link button if user is admin
             addInviteLinkButton();
@@ -2733,7 +3220,9 @@ function initGroupPage() {
             // Update member count in sidebar
             if (groupData) {
                 groupData.memberCount = newMembers.length;
-                groupMembersCount.textContent = `${newMembers.length} members`;
+                if (groupMembersCount) {
+                    groupMembersCount.textContent = `${newMembers.length} members`;
+                }
             }
         });
         
@@ -2757,6 +3246,8 @@ function initGroupPage() {
     
     // Update members list with admin tags
     function updateMembersList() {
+        if (!membersList) return;
+        
         membersList.innerHTML = '';
         
         if (members.length === 0) {
@@ -2775,7 +3266,7 @@ function initGroupPage() {
             const div = document.createElement('div');
             div.className = 'member-item';
             div.innerHTML = `
-                <img src="${member.avatar}" alt="${member.name}" class="member-avatar">
+                <img src="${member.avatar}" alt="${member.name}" class="member-avatar" data-user-id="${member.id}">
                 <div class="member-info">
                     <div class="member-name">
                         ${member.name}
@@ -2789,17 +3280,29 @@ function initGroupPage() {
             
             membersList.appendChild(div);
         });
+        
+        // Add click event to member avatars to open user profile
+        document.querySelectorAll('.member-avatar').forEach(avatar => {
+            avatar.addEventListener('click', (e) => {
+                const userId = e.target.dataset.userId;
+                if (userId && userId !== groupChat.firebaseUser?.uid) {
+                    window.open(`user.html?id=${userId}`, '_blank');
+                }
+            });
+        });
     }
     
     // Display messages with image support and reply functionality
     function displayMessages() {
+        if (!messagesContainer) return;
+        
         if (messages.length === 0) {
-            noMessages.style.display = 'block';
+            if (noMessages) noMessages.style.display = 'block';
             messagesContainer.innerHTML = '';
             return;
         }
         
-        noMessages.style.display = 'none';
+        if (noMessages) noMessages.style.display = 'none';
         
         // Store messages globally for long-press detection
         window.currentMessages = messages;
@@ -2846,7 +3349,10 @@ function initGroupPage() {
             
             groupDiv.innerHTML = `
                 <div class="message-header">
-                    <img src="${group.senderAvatar}" alt="${group.senderName}" class="message-avatar">
+                    <img src="${group.senderAvatar}" 
+                         alt="${group.senderName}" 
+                         class="message-avatar"
+                         data-user-id="${group.senderId}">
                     <span class="message-sender">${group.senderName}</span>
                     <span class="message-time">${formatTime(firstMessageTime)}</span>
                 </div>
@@ -2929,6 +3435,16 @@ function initGroupPage() {
             `;
             
             messagesContainer.appendChild(groupDiv);
+        });
+        
+        // Add click event to message avatars to open user profile
+        document.querySelectorAll('.message-avatar').forEach(avatar => {
+            avatar.addEventListener('click', (e) => {
+                const userId = e.target.dataset.userId;
+                if (userId && userId !== groupChat.firebaseUser?.uid) {
+                    window.open(`user.html?id=${userId}`, '_blank');
+                }
+            });
         });
         
         // Setup long press detection (for reply only)
@@ -3479,12 +3995,14 @@ function initJoinPage() {
     async function loadGroupByInviteCode(inviteCode) {
         try {
             // Show loading
-            groupInfo.innerHTML = `
-                <div class="loading-state">
-                    <div class="spinner"></div>
-                    <p>Loading group information...</p>
-                </div>
-            `;
+            if (groupInfo) {
+                groupInfo.innerHTML = `
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <p>Loading group information...</p>
+                    </div>
+                `;
+            }
             
             console.log('Fetching group with invite code:', inviteCode);
             
@@ -3507,79 +4025,81 @@ function initJoinPage() {
             const memberPercentage = Math.round((memberCount / maxMembers) * 100);
             
             // Show group info
-            groupInfo.innerHTML = `
-                <div class="group-card">
-                    <div class="group-header">
-                        <div class="group-avatar-section">
-                            <img src="${groupAvatar}" alt="${group.name}" class="group-avatar-large">
-                            <div class="group-title-section">
-                                <h2 class="group-name">${group.name}</h2>
-                                <div class="group-meta">
-                                    <span class="group-category">${group.category || 'General'}</span>
-                                    <span class="group-privacy-badge ${group.privacy === 'private' ? 'private' : 'public'}">
-                                        <i class="fas ${group.privacy === 'private' ? 'fa-lock' : 'fa-globe'}"></i>
-                                        ${group.privacy === 'private' ? 'Private Group' : 'Public Group'}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="group-description">
-                            <p>${group.description || 'No description provided.'}</p>
-                        </div>
-                        
-                        <div class="group-stats">
-                            <div class="stat-item">
-                                <i class="fas fa-users"></i>
-                                <div class="stat-content">
-                                    <span class="stat-value">${memberCount}/${maxMembers}</span>
-                                    <span class="stat-label">Members</span>
-                                    <div class="progress-bar">
-                                        <div class="progress-fill" style="width: ${memberPercentage}%"></div>
+            if (groupInfo) {
+                groupInfo.innerHTML = `
+                    <div class="group-card">
+                        <div class="group-header">
+                            <div class="group-avatar-section">
+                                <img src="${groupAvatar}" alt="${group.name}" class="group-avatar-large">
+                                <div class="group-title-section">
+                                    <h2 class="group-name">${group.name}</h2>
+                                    <div class="group-meta">
+                                        <span class="group-category">${group.category || 'General'}</span>
+                                        <span class="group-privacy-badge ${group.privacy === 'private' ? 'private' : 'public'}">
+                                            <i class="fas ${group.privacy === 'private' ? 'fa-lock' : 'fa-globe'}"></i>
+                                            ${group.privacy === 'private' ? 'Private Group' : 'Public Group'}
+                                        </span>
                                     </div>
-                                    <span class="stat-percentage">${memberPercentage}% full</span>
                                 </div>
                             </div>
-                            <div class="stat-item">
-                                <i class="fas fa-user-circle"></i>
-                                <div class="stat-content">
-                                    <span class="stat-value">${group.creatorName || 'Unknown'}</span>
-                                    <span class="stat-label">Created by</span>
-                                </div>
+                            
+                            <div class="group-description">
+                                <p>${group.description || 'No description provided.'}</p>
                             </div>
-                            <div class="stat-item">
-                                <i class="fas fa-calendar"></i>
-                                <div class="stat-content">
-                                    <span class="stat-value">${group.createdAt ? new Date(group.createdAt).toLocaleDateString() : 'Unknown'}</span>
-                                    <span class="stat-label">Created on</span>
+                            
+                            <div class="group-stats">
+                                <div class="stat-item">
+                                    <i class="fas fa-users"></i>
+                                    <div class="stat-content">
+                                        <span class="stat-value">${memberCount}/${maxMembers}</span>
+                                        <span class="stat-label">Members</span>
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: ${memberPercentage}%"></div>
+                                        </div>
+                                        <span class="stat-percentage">${memberPercentage}% full</span>
+                                    </div>
+                                </div>
+                                <div class="stat-item">
+                                    <i class="fas fa-user-circle"></i>
+                                    <div class="stat-content">
+                                        <span class="stat-value">${group.creatorName || 'Unknown'}</span>
+                                        <span class="stat-label">Created by</span>
+                                    </div>
+                                </div>
+                                <div class="stat-item">
+                                    <i class="fas fa-calendar"></i>
+                                    <div class="stat-content">
+                                        <span class="stat-value">${group.createdAt ? new Date(group.createdAt).toLocaleDateString() : 'Unknown'}</span>
+                                        <span class="stat-label">Created on</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
+                        
+                        ${group.topics && group.topics.length > 0 ? `
+                            <div class="group-section">
+                                <h3><i class="fas fa-comments"></i> Discussion Topics</h3>
+                                <div class="topics-grid">
+                                    ${group.topics.map(topic => 
+                                        `<span class="topic-chip">${topic}</span>`
+                                    ).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                        
+                        ${group.rules && group.rules.length > 0 ? `
+                            <div class="group-section">
+                                <h3><i class="fas fa-gavel"></i> Group Rules</h3>
+                                <ul class="rules-list">
+                                    ${group.rules.map(rule => 
+                                        `<li><i class="fas fa-check-circle"></i> ${rule}</li>`
+                                    ).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
                     </div>
-                    
-                    ${group.topics && group.topics.length > 0 ? `
-                        <div class="group-section">
-                            <h3><i class="fas fa-comments"></i> Discussion Topics</h3>
-                            <div class="topics-grid">
-                                ${group.topics.map(topic => 
-                                    `<span class="topic-chip">${topic}</span>`
-                                ).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
-                    
-                    ${group.rules && group.rules.length > 0 ? `
-                        <div class="group-section">
-                            <h3><i class="fas fa-gavel"></i> Group Rules</h3>
-                            <ul class="rules-list">
-                                ${group.rules.map(rule => 
-                                    `<li><i class="fas fa-check-circle"></i> ${rule}</li>`
-                                ).join('')}
-                            </ul>
-                        </div>
-                    ` : ''}
-                </div>
-            `;
+                `;
+            }
             
             // Setup join button
             if (joinBtn) {
@@ -3620,446 +4140,6 @@ function initJoinPage() {
                 }
                 
                 joinBtn.style.display = 'block';
-            }
-            
-            // Add styles for join page
-            if (!document.getElementById('join-page-styles')) {
-                const styles = document.createElement('style');
-                styles.id = 'join-page-styles';
-                styles.textContent = `
-                    .join-container {
-                        max-width: 800px;
-                        margin: 0 auto;
-                        padding: 20px;
-                    }
-                    
-                    .group-card {
-                        background: white;
-                        border-radius: 16px;
-                        padding: 30px;
-                        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-                        margin-bottom: 25px;
-                        border: 1px solid #eaeaea;
-                    }
-                    
-                    .group-header {
-                        margin-bottom: 30px;
-                    }
-                    
-                    .group-avatar-section {
-                        display: flex;
-                        align-items: center;
-                        gap: 20px;
-                        margin-bottom: 20px;
-                    }
-                    
-                    .group-avatar-large {
-                        width: 100px;
-                        height: 100px;
-                        border-radius: 50%;
-                        border: 4px solid #667eea;
-                        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-                    }
-                    
-                    .group-title-section h2 {
-                        margin: 0 0 8px 0;
-                        color: #333;
-                        font-size: 28px;
-                        font-weight: 700;
-                    }
-                    
-                    .group-meta {
-                        display: flex;
-                        gap: 12px;
-                        flex-wrap: wrap;
-                    }
-                    
-                    .group-category {
-                        background: #e0f7fa;
-                        color: #00796b;
-                        padding: 6px 14px;
-                        border-radius: 20px;
-                        font-size: 14px;
-                        font-weight: 600;
-                    }
-                    
-                    .group-privacy-badge {
-                        padding: 6px 14px;
-                        border-radius: 20px;
-                        font-size: 14px;
-                        font-weight: 600;
-                        display: flex;
-                        align-items: center;
-                        gap: 6px;
-                    }
-                    
-                    .group-privacy-badge.private {
-                        background: #ffebee;
-                        color: #c62828;
-                    }
-                    
-                    .group-privacy-badge.public {
-                        background: #e8f5e9;
-                        color: #2e7d32;
-                    }
-                    
-                    .group-description {
-                        background: #f8f9fa;
-                        border-radius: 12px;
-                        padding: 20px;
-                        margin: 20px 0;
-                        border-left: 4px solid #667eea;
-                    }
-                    
-                    .group-description p {
-                        margin: 0;
-                        color: #555;
-                        line-height: 1.6;
-                        font-size: 16px;
-                    }
-                    
-                    .group-stats {
-                        display: grid;
-                        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-                        gap: 20px;
-                        margin-top: 25px;
-                    }
-                    
-                    .stat-item {
-                        background: #f8f9fa;
-                        border-radius: 12px;
-                        padding: 20px;
-                        display: flex;
-                        align-items: center;
-                        gap: 15px;
-                        transition: transform 0.2s;
-                    }
-                    
-                    .stat-item:hover {
-                        transform: translateY(-2px);
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-                    }
-                    
-                    .stat-item i {
-                        font-size: 24px;
-                        color: #667eea;
-                        width: 40px;
-                        height: 40px;
-                        background: white;
-                        border-radius: 50%;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
-                    }
-                    
-                    .stat-content {
-                        flex: 1;
-                    }
-                    
-                    .stat-value {
-                        display: block;
-                        font-size: 20px;
-                        font-weight: 700;
-                        color: #333;
-                        margin-bottom: 4px;
-                    }
-                    
-                    .stat-label {
-                        display: block;
-                        font-size: 14px;
-                        color: #666;
-                        margin-bottom: 8px;
-                    }
-                    
-                    .progress-bar {
-                        height: 6px;
-                        background: #e0e0e0;
-                        border-radius: 3px;
-                        overflow: hidden;
-                        margin: 8px 0;
-                    }
-                    
-                    .progress-fill {
-                        height: 100%;
-                        background: linear-gradient(90deg, #667eea, #764ba2);
-                        border-radius: 3px;
-                        transition: width 0.3s ease;
-                    }
-                    
-                    .stat-percentage {
-                        font-size: 12px;
-                        color: #666;
-                        font-weight: 600;
-                    }
-                    
-                    .group-section {
-                        margin: 25px 0;
-                        padding: 25px 0;
-                        border-top: 1px solid #eee;
-                    }
-                    
-                    .group-section h3 {
-                        margin: 0 0 20px 0;
-                        color: #444;
-                        font-size: 20px;
-                        display: flex;
-                        align-items: center;
-                        gap: 10px;
-                    }
-                    
-                    .group-section h3 i {
-                        color: #667eea;
-                    }
-                    
-                    .topics-grid {
-                        display: flex;
-                        flex-wrap: wrap;
-                        gap: 10px;
-                    }
-                    
-                    .topic-chip {
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        color: white;
-                        padding: 10px 18px;
-                        border-radius: 25px;
-                        font-size: 14px;
-                        font-weight: 500;
-                        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-                    }
-                    
-                    .rules-list {
-                        list-style: none;
-                        padding: 0;
-                        margin: 0;
-                    }
-                    
-                    .rules-list li {
-                        padding: 12px 0;
-                        border-bottom: 1px solid #f0f0f0;
-                        display: flex;
-                        align-items: center;
-                        gap: 12px;
-                        color: #555;
-                    }
-                    
-                    .rules-list li:last-child {
-                        border-bottom: none;
-                    }
-                    
-                    .rules-list li i {
-                        color: #4CAF50;
-                        font-size: 16px;
-                    }
-                    
-                    .join-btn {
-                        display: block;
-                        width: 100%;
-                        padding: 18px 30px;
-                        border-radius: 12px;
-                        font-size: 18px;
-                        font-weight: 600;
-                        cursor: pointer;
-                        border: none;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        gap: 12px;
-                        transition: all 0.3s ease;
-                        margin-top: 30px;
-                        text-decoration: none;
-                    }
-                    
-                    .join-btn.primary {
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        color: white;
-                        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-                    }
-                    
-                    .join-btn.primary:hover {
-                        transform: translateY(-2px);
-                        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
-                    }
-                    
-                    .join-btn.secondary {
-                        background: #f8f9fa;
-                        color: #667eea;
-                        border: 2px solid #667eea;
-                    }
-                    
-                    .join-btn.secondary:hover {
-                        background: #667eea;
-                        color: white;
-                    }
-                    
-                    .join-btn.success {
-                        background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
-                        color: white;
-                        box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
-                    }
-                    
-                    .join-btn.success:hover {
-                        transform: translateY(-2px);
-                        box-shadow: 0 6px 20px rgba(76, 175, 80, 0.6);
-                    }
-                    
-                    .join-btn:disabled {
-                        opacity: 0.7;
-                        cursor: not-allowed;
-                        transform: none !important;
-                    }
-                    
-                    .loading-state {
-                        text-align: center;
-                        padding: 60px 20px;
-                    }
-                    
-                    .spinner {
-                        width: 50px;
-                        height: 50px;
-                        border: 4px solid #f3f3f3;
-                        border-top: 4px solid #667eea;
-                        border-radius: 50%;
-                        animation: spin 1s linear infinite;
-                        margin: 0 auto 20px;
-                    }
-                    
-                    .loading-state p {
-                        color: #666;
-                        font-size: 18px;
-                        margin: 0;
-                    }
-                    
-                    @keyframes spin {
-                        0% { transform: rotate(0deg); }
-                        100% { transform: rotate(360deg); }
-                    }
-                    
-                    .error-notification {
-                        background: #ffebee;
-                        border: 1px solid #ffcdd2;
-                        border-radius: 12px;
-                        padding: 20px;
-                        margin-bottom: 25px;
-                        display: none;
-                    }
-                    
-                    .error-notification.show {
-                        display: block;
-                        animation: slideIn 0.3s ease;
-                    }
-                    
-                    .error-notification .error-header {
-                        display: flex;
-                        align-items: center;
-                        gap: 10px;
-                        margin-bottom: 10px;
-                    }
-                    
-                    .error-notification .error-header i {
-                        color: #c62828;
-                        font-size: 24px;
-                    }
-                    
-                    .error-notification .error-header h3 {
-                        margin: 0;
-                        color: #c62828;
-                        font-size: 18px;
-                    }
-                    
-                    .error-notification .error-message {
-                        color: #666;
-                        margin: 0;
-                        line-height: 1.5;
-                    }
-                    
-                    .error-notification .error-details {
-                        background: rgba(198, 40, 40, 0.1);
-                        border-radius: 8px;
-                        padding: 12px;
-                        margin-top: 15px;
-                        font-family: monospace;
-                        font-size: 12px;
-                        color: #c62828;
-                        overflow-x: auto;
-                        display: none;
-                    }
-                    
-                    .error-notification.show-details .error-details {
-                        display: block;
-                    }
-                    
-                    .error-notification .error-actions {
-                        display: flex;
-                        gap: 10px;
-                        margin-top: 15px;
-                    }
-                    
-                    .error-notification .error-btn {
-                        padding: 8px 16px;
-                        border-radius: 6px;
-                        font-size: 14px;
-                        font-weight: 500;
-                        cursor: pointer;
-                        border: none;
-                        transition: all 0.2s;
-                    }
-                    
-                    .error-notification .retry-btn {
-                        background: #c62828;
-                        color: white;
-                    }
-                    
-                    .error-notification .retry-btn:hover {
-                        background: #b71c1c;
-                    }
-                    
-                    .error-notification .details-btn {
-                        background: transparent;
-                        color: #c62828;
-                        border: 1px solid #c62828;
-                    }
-                    
-                    .error-notification .details-btn:hover {
-                        background: rgba(198, 40, 40, 0.1);
-                    }
-                    
-                    @keyframes slideIn {
-                        from {
-                            opacity: 0;
-                            transform: translateY(-10px);
-                        }
-                        to {
-                            opacity: 1;
-                            transform: translateY(0);
-                        }
-                    }
-                    
-                    @media (max-width: 768px) {
-                        .join-container {
-                            padding: 15px;
-                        }
-                        
-                        .group-card {
-                            padding: 20px;
-                        }
-                        
-                        .group-avatar-section {
-                            flex-direction: column;
-                            text-align: center;
-                        }
-                        
-                        .group-stats {
-                            grid-template-columns: 1fr;
-                        }
-                        
-                        .join-btn {
-                            padding: 16px 20px;
-                            font-size: 16px;
-                        }
-                    }
-                `;
-                document.head.appendChild(styles);
             }
             
         } catch (error) {
@@ -4181,6 +4261,817 @@ function initJoinPage() {
         // Hide join button if it exists
         if (joinBtn) {
             joinBtn.style.display = 'none';
+        }
+    }
+}
+
+// ==================== USER PAGE INITIALIZATION ====================
+
+function initUserPage() {
+    const backBtn = document.getElementById('backBtn');
+    const userAvatar = document.getElementById('userAvatar');
+    const userName = document.getElementById('userName');
+    const userBio = document.getElementById('userBio');
+    const userEmail = document.getElementById('userEmail');
+    const chatBtn = document.getElementById('chatBtn');
+    const mutualGroupsList = document.getElementById('mutualGroupsList');
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const userId = urlParams.get('id');
+    
+    if (!userId) {
+        alert('No user specified');
+        window.location.href = 'message.html';
+        return;
+    }
+    
+    // Check auth
+    if (!groupChat.firebaseUser) {
+        window.location.href = 'login.html';
+        return;
+    }
+    
+    // Can't view own profile from here
+    if (userId === groupChat.firebaseUser.uid) {
+        alert('This is your own profile');
+        window.location.href = 'message.html';
+        return;
+    }
+    
+    // Back button
+    backBtn.addEventListener('click', () => {
+        const referrer = document.referrer;
+        if (referrer && referrer.includes('group.html')) {
+            window.history.back();
+        } else {
+            window.location.href = 'message.html';
+        }
+    });
+    
+    // Chat button
+    chatBtn.addEventListener('click', () => {
+        window.location.href = `chats.html?id=${userId}`;
+    });
+    
+    // Load user data
+    loadUserData();
+    
+    async function loadUserData() {
+        try {
+            // Load user profile
+            const userProfile = await groupChat.getUserProfile(userId);
+            
+            if (!userProfile) {
+                if (mutualGroupsList) {
+                    mutualGroupsList.innerHTML = `
+                        <div class="no-groups">
+                            <p>User not found</p>
+                        </div>
+                    `;
+                }
+                return;
+            }
+            
+            // Update UI
+            if (userAvatar) userAvatar.src = userProfile.avatar;
+            if (userName) userName.textContent = userProfile.name;
+            if (userBio) userBio.textContent = userProfile.bio;
+            if (userEmail) userEmail.textContent = userProfile.email || 'Email not available';
+            
+            // Load mutual groups
+            const mutualGroups = await groupChat.getMutualGroups(groupChat.firebaseUser.uid, userId);
+            
+            if (mutualGroupsList) {
+                if (mutualGroups.length === 0) {
+                    mutualGroupsList.innerHTML = `
+                        <div class="no-groups">
+                            <p>No mutual groups with this user</p>
+                        </div>
+                    `;
+                } else {
+                    mutualGroupsList.innerHTML = '';
+                    
+                    mutualGroups.forEach(group => {
+                        const groupItem = document.createElement('div');
+                        groupItem.className = 'group-item';
+                        groupItem.innerHTML = `
+                            <img src="${group.avatar}" alt="${group.name}" class="group-avatar">
+                            <div>
+                                <div class="group-name">${group.name}</div>
+                                <div class="group-members">${group.memberCount} members</div>
+                            </div>
+                        `;
+                        
+                        groupItem.addEventListener('click', () => {
+                            window.location.href = `group.html?id=${group.id}`;
+                        });
+                        
+                        mutualGroupsList.appendChild(groupItem);
+                    });
+                }
+            }
+            
+        } catch (error) {
+            console.error('Error loading user data:', error);
+            if (mutualGroupsList) {
+                mutualGroupsList.innerHTML = `
+                    <div class="no-groups">
+                        <p>Error loading user data</p>
+                    </div>
+                `;
+            }
+        }
+    }
+}
+
+// ==================== CHAT PAGE INITIALIZATION (PRIVATE CHATS WITH IMAGE AND REPLY SUPPORT) ====================
+
+function initChatPage() {
+    const sidebar = document.getElementById('sidebar');
+    const backBtn = document.getElementById('backBtn');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const messagesContainer = document.getElementById('messagesContainer');
+    const noMessages = document.getElementById('noMessages');
+    const messageInput = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const emojiBtn = document.getElementById('emojiBtn');
+    const attachmentBtn = document.getElementById('attachmentBtn');
+    const partnerAvatar = document.getElementById('partnerAvatar');
+    const partnerName = document.getElementById('partnerName');
+    const partnerEmail = document.getElementById('partnerEmail');
+    const userBio = document.getElementById('userBio');
+    const viewProfileBtn = document.getElementById('viewProfileBtn');
+    const chatTitle = document.getElementById('chatTitle');
+    const chatSubtitle = document.getElementById('chatSubtitle');
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const partnerId = urlParams.get('id');
+    
+    let messages = [];
+    let partnerProfile = null;
+    let isListening = false; // Track if we're already listening
+    
+    if (!partnerId) {
+        alert('No chat partner specified');
+        window.location.href = 'message.html';
+        return;
+    }
+    
+    // Check auth
+    if (!groupChat.firebaseUser) {
+        window.location.href = 'login.html';
+        return;
+    }
+    
+    // Can't chat with yourself
+    if (partnerId === groupChat.firebaseUser.uid) {
+        alert('You cannot chat with yourself');
+        window.location.href = 'message.html';
+        return;
+    }
+    
+    // Store current partner ID
+    groupChat.currentChatPartnerId = partnerId;
+    
+    // Back button
+    backBtn.addEventListener('click', () => {
+        groupChat.cleanup();
+        window.location.href = 'message.html';
+    });
+    
+    // Sidebar toggle
+    if (sidebarToggle) {
+        sidebarToggle.addEventListener('click', () => {
+            if (sidebar) {
+                sidebar.classList.toggle('active');
+            }
+        });
+    }
+    
+    // View profile button
+    if (viewProfileBtn) {
+        viewProfileBtn.addEventListener('click', () => {
+            window.open(`user.html?id=${partnerId}`, '_blank');
+        });
+    }
+    
+    // Message input events
+    messageInput.addEventListener('input', () => {
+        if (sendBtn) {
+            sendBtn.disabled = !messageInput.value.trim();
+        }
+        messageInput.style.height = 'auto';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+    });
+    
+    // Send message with reply support
+    sendBtn.addEventListener('click', () => sendMessage());
+    
+    messageInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+    
+    // Emoji button - simple implementation
+    emojiBtn.addEventListener('click', () => {
+        // Simple emoji picker
+        const emojis = ['😀', '😂', '🥰', '😎', '🤔', '👍', '🎉', '❤️', '🔥', '✨'];
+        const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+        
+        messageInput.value += randomEmoji;
+        messageInput.focus();
+        messageInput.dispatchEvent(new Event('input'));
+    });
+    
+    // Attachment button - image upload for private chat
+    attachmentBtn.addEventListener('click', () => {
+        // Create file input
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*';
+        fileInput.multiple = false;
+        
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                try {
+                    // Show loading state
+                    const originalHTML = attachmentBtn.innerHTML;
+                    attachmentBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                    attachmentBtn.disabled = true;
+                    
+                    // Send private image message with reply support
+                    await groupChat.sendPrivateImageMessage(partnerId, file, groupChat.replyingToMessage?.id);
+                    
+                    // Restore button state
+                    attachmentBtn.innerHTML = originalHTML;
+                    attachmentBtn.disabled = false;
+                    
+                } catch (error) {
+                    console.error('Error sending image:', error);
+                    alert(error.message || 'Failed to send image. Please try again.');
+                    
+                    // Restore button state
+                    attachmentBtn.innerHTML = '<i class="fas fa-paperclip"></i>';
+                    attachmentBtn.disabled = false;
+                }
+            }
+        });
+        
+        fileInput.click();
+    });
+    
+    // Listen for temporary private image messages
+    document.addEventListener('tempPrivateImageMessage', (e) => {
+        const { tempId, message, partnerId: eventPartnerId } = e.detail;
+        
+        // Only handle if it's for the current chat partner
+        if (eventPartnerId === partnerId) {
+            // Add to messages array for display
+            const tempMsgIndex = messages.findIndex(m => m.id === tempId);
+            if (tempMsgIndex === -1) {
+                messages.push(message);
+                displayMessages();
+            }
+        }
+    });
+    
+    // Listen for temporary message removal
+    document.addEventListener('removeTempPrivateMessage', (e) => {
+        const tempId = e.detail.tempId;
+        
+        // Remove from messages array
+        const tempMsgIndex = messages.findIndex(m => m.id === tempId);
+        if (tempMsgIndex !== -1) {
+            messages.splice(tempMsgIndex, 1);
+            displayMessages();
+        }
+    });
+    
+    // Load chat data
+    loadChatData();
+    
+    async function loadChatData() {
+        try {
+            // Load partner profile
+            partnerProfile = await groupChat.getUserProfile(partnerId);
+            
+            if (!partnerProfile) {
+                alert('User not found');
+                window.location.href = 'message.html';
+                return;
+            }
+            
+            // Update UI
+            if (partnerAvatar) partnerAvatar.src = partnerProfile.avatar;
+            if (partnerName) partnerName.textContent = partnerProfile.name;
+            if (partnerEmail) partnerEmail.textContent = partnerProfile.email || 'Email not available';
+            if (userBio) userBio.textContent = partnerProfile.bio;
+            if (chatTitle) chatTitle.textContent = partnerProfile.name;
+            if (chatSubtitle) chatSubtitle.textContent = 'Private Chat';
+            
+            // Load initial messages
+            messages = await groupChat.getPrivateMessages(partnerId);
+            displayMessages();
+            
+            // Setup long press detection for private messages
+            if (messagesContainer) {
+                groupChat.setupMessageLongPress(messagesContainer);
+            }
+            
+            // Mark messages as read
+            const chatId = groupChat.getPrivateChatId(groupChat.firebaseUser.uid, partnerId);
+            await groupChat.markMessagesAsRead(chatId, partnerId);
+            
+            // Setup real-time listener (only if not already listening)
+            if (!isListening) {
+                groupChat.listenToPrivateMessages(partnerId, (newMessages) => {
+                    messages = newMessages;
+                    displayMessages();
+                    
+                    // Mark new messages as read
+                    if (newMessages.length > 0) {
+                        groupChat.markMessagesAsRead(chatId, partnerId);
+                    }
+                });
+                isListening = true;
+            }
+            
+        } catch (error) {
+            console.error('Error loading chat data:', error);
+            alert('Error loading chat data');
+        }
+    }
+    
+    function displayMessages() {
+        if (!messagesContainer) return;
+        
+        if (messages.length === 0) {
+            if (noMessages) noMessages.style.display = 'block';
+            messagesContainer.innerHTML = '';
+            return;
+        }
+        
+        if (noMessages) noMessages.style.display = 'none';
+        
+        // Store messages globally for long-press detection
+        window.currentMessages = messages;
+        
+        // Group messages by sender and time
+        const groupedMessages = [];
+        let currentGroup = null;
+        
+        messages.forEach((message, index) => {
+            const messageTime = message.timestamp ? new Date(message.timestamp) : new Date();
+            const prevMessage = messages[index - 1];
+            const prevTime = prevMessage && prevMessage.timestamp ? new Date(prevMessage.timestamp) : new Date(0);
+            
+            const timeDiff = Math.abs(messageTime - prevTime) / (1000 * 60); // minutes
+            
+            if (!prevMessage || 
+                prevMessage.senderId !== message.senderId || 
+                timeDiff > 5) {
+                // Start new group
+                currentGroup = {
+                    senderId: message.senderId,
+                    senderName: message.senderId === groupChat.firebaseUser.uid ? 
+                        groupChat.currentUser.name : partnerProfile.name,
+                    senderAvatar: message.senderId === groupChat.firebaseUser.uid ? 
+                        groupChat.currentUser.avatar : partnerProfile.avatar,
+                    messages: [message]
+                };
+                groupedMessages.push(currentGroup);
+            } else {
+                // Add to current group
+                currentGroup.messages.push(message);
+            }
+        });
+        
+        // Render grouped messages
+        messagesContainer.innerHTML = '';
+        
+        groupedMessages.forEach(group => {
+            const groupDiv = document.createElement('div');
+            groupDiv.className = 'message-group';
+            groupDiv.dataset.senderId = group.senderId;
+            
+            // First message in group
+            const firstMessage = group.messages[0];
+            const firstMessageTime = firstMessage.timestamp ? new Date(firstMessage.timestamp) : new Date();
+            
+            groupDiv.innerHTML = `
+                <div class="message-header">
+                    <img src="${group.senderAvatar}" 
+                         alt="${group.senderName}" 
+                         class="message-avatar"
+                         data-user-id="${group.senderId}">
+                    <span class="message-sender">${group.senderName}</span>
+                    <span class="message-time">${formatTime(firstMessageTime)}</span>
+                </div>
+                <div class="message-content">
+                    ${group.messages.map(msg => {
+                        const messageTime = msg.timestamp ? new Date(msg.timestamp) : new Date();
+                        
+                        let replyHtml = '';
+                        if (msg.replyTo) {
+                            const repliedMessage = messages.find(m => m.id === msg.replyTo);
+                            if (repliedMessage) {
+                                // Truncate sender name to 6 letters
+                                const truncatedName = groupChat.truncateName(repliedMessage.senderName);
+                                // Truncate message text to 25 characters (short)
+                                const truncatedMessage = repliedMessage.text ? 
+                                    groupChat.truncateMessage(repliedMessage.text) : 
+                                    '📷 Image';
+                                
+                                replyHtml = `
+                                    <div class="replying-to">
+                                        <span class="reply-label">Replying to</span> 
+                                        <span class="reply-sender">${truncatedName}</span>
+                                        <span class="reply-separator">:</span> 
+                                        <span class="reply-message">${truncatedMessage}</span>
+                                    </div>
+                                `;
+                            }
+                        }
+                        
+                        // Check if this is a temporary message
+                        const isTemp = groupChat.tempPrivateMessages.has(msg.id);
+                        const isUploading = msg.status === 'uploading';
+                        
+                        // Set data-message-id attribute for long-press detection
+                        const messageDivClass = 'message-text';
+                        
+                        if (msg.imageUrl) {
+                            // Image message
+                            return `
+                                <div class="${messageDivClass}" data-message-id="${msg.id}">
+                                    ${replyHtml}
+                                    <div class="message-image-container" style="position: relative;">
+                                        <img src="${msg.imageUrl}" 
+                                             alt="Shared image" 
+                                             class="message-image"
+                                             style="max-width: 300px; max-height: 300px; border-radius: 8px; cursor: pointer;"
+                                             onclick="openImageModal('${msg.imageUrl}')">
+                                        ${isUploading ? `
+                                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                                                   background: rgba(0,0,0,0.7); color: white; padding: 8px 12px; border-radius: 20px;
+                                                   font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                                                <i class="fas fa-spinner fa-spin"></i> Uploading...
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                    ${isTemp ? '<div style="font-size: 11px; color: #999; margin-top: 4px;">Sending...</div>' : ''}
+                                </div>
+                            `;
+                        } else {
+                            // Text message
+                            return `
+                                <div class="${messageDivClass}" data-message-id="${msg.id}">
+                                    ${replyHtml}
+                                    ${msg.text || ''}
+                                    ${isTemp ? '<div style="font-size: 11px; color: #999; margin-top: 4px;">Sending...</div>' : ''}
+                                </div>
+                            `;
+                        }
+                    }).join('')}
+                </div>
+            `;
+            
+            messagesContainer.appendChild(groupDiv);
+        });
+        
+        // Add click event to message avatars
+        document.querySelectorAll('.message-avatar').forEach(avatar => {
+            avatar.addEventListener('click', (e) => {
+                const userId = e.target.dataset.userId;
+                if (userId && userId !== groupChat.firebaseUser?.uid) {
+                    window.open(`user.html?id=${userId}`, '_blank');
+                }
+            });
+        });
+        
+        // Scroll to bottom
+        setTimeout(() => {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }, 100);
+    }
+    
+    async function sendMessage() {
+    const text = messageInput.value.trim();
+    
+    if (!text) return;
+    
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    
+    try {
+        // Send with reply if replying
+        await groupChat.sendPrivateMessage(
+            partnerId, 
+            text, 
+            null, 
+            groupChat.replyingToMessage?.id
+        );
+        
+        // Clear input AND reply after sending
+        messageInput.value = '';
+        messageInput.style.height = 'auto';
+        messageInput.dispatchEvent(new Event('input'));
+        
+        // CLEAR THE REPLY AFTER SENDING
+        groupChat.clearReply();
+        
+    } catch (error) {
+        console.error('Error sending message:', error);
+        alert('Failed to send message');
+    } finally {
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = 'Send';
+    }
+}
+    
+    function formatTime(date) {
+        if (!(date instanceof Date)) {
+            date = new Date(date);
+        }
+        
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+        
+        if (diffDays > 0) {
+            return `${diffDays}d ago`;
+        } else if (diffHours > 0) {
+            return `${diffHours}h ago`;
+        } else if (diffMins > 0) {
+            return `${diffMins}m ago`;
+        } else {
+            return 'just now';
+        }
+    }
+    
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+        groupChat.cleanup();
+    });
+    
+    // Add image modal function to window (same as group page)
+    if (!window.openImageModal) {
+        window.openImageModal = function(imageUrl) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.9);
+                z-index: 10000;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            `;
+            
+            modal.innerHTML = `
+                <div style="position: relative; max-width: 90%; max-height: 90%;">
+                    <img src="${imageUrl}" alt="Full size" style="max-width: 100%; max-height: 90vh; border-radius: 8px;">
+                    <button style="position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.5); color: white; 
+                            border: none; border-radius: 50%; width: 40px; height: 40px; font-size: 20px; cursor: pointer;">
+                        ×
+                    </button>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            modal.querySelector('button').addEventListener('click', () => {
+                document.body.removeChild(modal);
+            });
+            
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    document.body.removeChild(modal);
+                }
+            });
+        };
+    }
+}
+
+// ==================== MESSAGES PAGE INITIALIZATION ====================
+
+function initMessagesPage() {
+    const backBtn = document.getElementById('backBtn');
+    const privateTab = document.getElementById('privateTab');
+    const groupTab = document.getElementById('groupTab');
+    const privateBadge = document.getElementById('privateBadge');
+    const groupBadge = document.getElementById('groupBadge');
+    const messagesList = document.getElementById('messagesList');
+    
+    let activeTab = 'private';
+    let privateChats = [];
+    let groupChats = [];
+    
+    // Check auth
+    if (!groupChat.firebaseUser) {
+        window.location.href = 'login.html';
+        return;
+    }
+    
+    // Back button
+    if (backBtn) {
+        backBtn.addEventListener('click', () => {
+            window.location.href = 'groups.html';
+        });
+    }
+    
+    // Tab switching
+    if (privateTab) {
+        privateTab.addEventListener('click', () => {
+            if (activeTab !== 'private') {
+                activeTab = 'private';
+                privateTab.classList.add('active');
+                if (groupTab) groupTab.classList.remove('active');
+                loadMessages();
+            }
+        });
+    }
+    
+    if (groupTab) {
+        groupTab.addEventListener('click', () => {
+            if (activeTab !== 'group') {
+                activeTab = 'group';
+                groupTab.classList.add('active');
+                if (privateTab) privateTab.classList.remove('active');
+                loadMessages();
+            }
+        });
+    }
+    
+    // Load messages
+    loadMessages();
+    
+    async function loadMessages() {
+        try {
+            if (messagesList) {
+                messagesList.innerHTML = `
+                    <div class="loading">
+                        <div class="loading-spinner"></div>
+                        <p>Loading messages...</p>
+                    </div>
+                `;
+            }
+            
+            if (activeTab === 'private') {
+                // Load private chats
+                privateChats = await groupChat.getPrivateChats();
+                displayPrivateChats();
+                
+                // Update badge
+                if (privateBadge) {
+                    const totalUnread = privateChats.reduce((sum, chat) => sum + (chat.unreadCount || 0), 0);
+                    privateBadge.textContent = totalUnread > 0 ? totalUnread : '0';
+                }
+                
+            } else {
+                // Load group chats
+                groupChats = await groupChat.getGroupChatsWithUnread();
+                displayGroupChats();
+                
+                // Update badge (groups don't have unread yet)
+                if (groupBadge) {
+                    groupBadge.textContent = groupChats.length > 0 ? groupChats.length : '0';
+                }
+            }
+            
+        } catch (error) {
+            console.error('Error loading messages:', error);
+            if (messagesList) {
+                messagesList.innerHTML = `
+                    <div class="no-messages">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <p>Error loading messages. Please try again.</p>
+                    </div>
+                `;
+            }
+        }
+    }
+    
+    function displayPrivateChats() {
+        if (!messagesList) return;
+        
+        if (privateChats.length === 0) {
+            messagesList.innerHTML = `
+                <div class="no-messages">
+                    <i class="fas fa-comment-slash"></i>
+                    <p>No private messages yet</p>
+                    <p style="font-size: 0.9rem; margin-top: 10px;">Start a chat by clicking on a user's avatar in a group</p>
+                </div>
+            `;
+            return;
+        }
+        
+        messagesList.innerHTML = '';
+        
+        privateChats.forEach(chat => {
+            const messageItem = document.createElement('div');
+            messageItem.className = `message-item ${chat.unreadCount > 0 ? 'unread' : ''}`;
+            messageItem.innerHTML = `
+                <img src="${chat.userAvatar}" alt="${chat.userName}" class="user-avatar">
+                <div class="message-content">
+                    <div class="message-header">
+                        <div class="message-user">${chat.userName}</div>
+                        <div class="message-time">${formatTime(chat.updatedAt)}</div>
+                    </div>
+                    <div class="message-preview">
+                        ${chat.lastMessage ? chat.lastMessage.text : 'No messages yet'}
+                    </div>
+                </div>
+                <div class="message-info">
+                    ${chat.unreadCount > 0 ? `
+                        <div class="unread-count">${chat.unreadCount}</div>
+                    ` : ''}
+                    <div class="last-message">${chat.lastMessage ? formatTime(chat.lastMessage.timestamp) : ''}</div>
+                </div>
+            `;
+            
+            messageItem.addEventListener('click', () => {
+                window.location.href = `chats.html?id=${chat.userId}`;
+            });
+            
+            messagesList.appendChild(messageItem);
+        });
+    }
+    
+    function displayGroupChats() {
+        if (!messagesList) return;
+        
+        if (groupChats.length === 0) {
+            messagesList.innerHTML = `
+                <div class="no-messages">
+                    <i class="fas fa-users-slash"></i>
+                    <p>No group messages yet</p>
+                    <p style="font-size: 0.9rem; margin-top: 10px;">Join a group to start chatting</p>
+                </div>
+            `;
+            return;
+        }
+        
+        messagesList.innerHTML = '';
+        
+        groupChats.forEach(group => {
+            const messageItem = document.createElement('div');
+            messageItem.className = 'message-item';
+            messageItem.innerHTML = `
+                <img src="${group.avatar}" alt="${group.name}" class="user-avatar">
+                <div class="message-content">
+                    <div class="message-header">
+                        <div class="message-user">${group.name}</div>
+                        <div class="message-time">${group.lastMessage ? formatTime(group.lastMessage.timestamp) : ''}</div>
+                    </div>
+                    <div class="message-preview">
+                        ${group.lastMessage ? 
+                            `${group.lastMessage.senderName}: ${group.lastMessage.text}` : 
+                            'No messages yet'}
+                    </div>
+                </div>
+                <div class="message-info">
+                    <div class="group-members">${group.memberCount} members</div>
+                </div>
+            `;
+            
+            messageItem.addEventListener('click', () => {
+                window.location.href = `group.html?id=${group.id}`;
+            });
+            
+            messagesList.appendChild(messageItem);
+        });
+    }
+    
+    function formatTime(date) {
+        if (!date) return '';
+        
+        if (!(date instanceof Date)) {
+            date = new Date(date);
+        }
+        
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+        
+        if (diffDays > 0) {
+            return `${diffDays}d ago`;
+        } else if (diffHours > 0) {
+            return `${diffHours}h ago`;
+        } else if (diffMins > 0) {
+            return `${diffMins}m ago`;
+        } else {
+            return 'just now';
         }
     }
 }

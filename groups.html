@@ -252,66 +252,101 @@
             color: var(--text-primary);
             line-height: 1.5;
             min-height: 100vh;
+            padding-bottom: 70px; /* Space for bottom nav */
         }
 
+        /* Hide the top navbar */
         .navbar {
-            background: rgba(255, 255, 255, 0.06);
-            backdrop-filter: blur(6px);
-            position: fixed;
-            top: 0;
+            display: none;
+        }
+        
+        /* Bottom Navigation - Style from stream.html */
+        .bottom-nav {
+            position: fixed !important; /* Ensure it's fixed */
+            bottom: 0;
             left: 0;
             right: 0;
+            background: rgba(0,0,0,0.9);
+            backdrop-filter: blur(20px);
+            display: flex;
+            justify-content: space-around;
+            padding: 10px 0;
+            border-top: 1px solid rgba(255,255,255,0.1);
             z-index: 1000;
-            padding: 0.75rem 0;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            height: 70px; /* Fixed height */
         }
 
-        .navbar-container {
-            max-width: 1200px;
-            margin: 0 auto;
+        .nav-item {
             display: flex;
-            justify-content: space-between;
+            flex-direction: column;
             align-items: center;
-            padding: 0 1.5rem;
-        }
-
-        .logo {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--primary-light);
+            justify-content: center;
+            gap: 4px;
+            color: #fff;
             text-decoration: none;
+            opacity: 0.7;
+            transition: opacity 0.3s;
+            padding: 5px;
+            flex: 1;
+            max-width: 20%; /* 5 items = 20% each */
+            height: 100%;
+        }
+
+        .nav-item:hover {
+            opacity: 1;
+        }
+
+        .nav-item.active {
+            opacity: 1;
+            color: #ff2d55;
+        }
+
+        .nav-icon {
+            font-size: 20px;
+        }
+
+        .nav-label {
+            font-size: 10px;
+            font-weight: 500;
+            text-align: center;
+        }
+        
+        /* Special style for Stream link */
+        .nav-item.stream-link .nav-label {
+            font-family: 'Great Vibes', cursive;
+            font-size: 11px;
+        }
+        
+        /* Notification badge for bottom nav */
+        .notification-badge-bottom {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background-color: var(--secondary);
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 10px;
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            justify-content: center;
+            font-weight: 600;
+            transform: translate(25%, -25%);
         }
-
-        .logo::before {
-            content: "👥";
-        }
-
-        .nav-links {
+        
+        .badge-container {
+            position: relative;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            text-decoration: none;
-            color: var(--text-secondary);
-            font-size: 0.75rem;
-            gap: 0.25rem;
-            padding: 0.5rem;
-            border-radius: var(--radius);
-        }
-
-        .nav-links:hover {
-            color: var(--primary-light);
-            background-color: rgba(255, 255, 255, 0.02);
-        }
-
-        .nav-links i {
-            font-size: 1.25rem;
         }
 
         .main-content {
-            margin-top: 70px;
+            margin-top: 20px; /* Reduced since no top nav */
             padding: 20px;
+            margin-bottom: 70px; /* Space for bottom nav */
         }
 
         .page-header {
@@ -342,11 +377,20 @@
             align-items: center;
             gap: 8px;
             transition: all 0.3s ease;
+            text-decoration: none;
         }
 
         .create-group-btn:hover {
             background: linear-gradient(135deg, var(--primary-light), var(--primary));
             transform: translateY(-2px);
+        }
+        
+        .create-group-btn a {
+            color: white;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .groups-grid {
@@ -581,11 +625,33 @@
 
             .main-content {
                 padding: 15px;
-                margin-top: 60px;
+                margin-top: 10px;
             }
 
             .page-title {
                 font-size: 1.6rem;
+            }
+            
+            /* Bottom nav responsive */
+            .bottom-nav {
+                height: 65px;
+            }
+            
+            .nav-item {
+                max-width: 20%;
+                padding: 3px;
+            }
+            
+            .nav-label {
+                font-size: 9px;
+            }
+            
+            .nav-icon {
+                font-size: 18px;
+            }
+            
+            .nav-item.stream-link .nav-label {
+                font-size: 10px;
             }
         }
 
@@ -593,59 +659,34 @@
             .group-card {
                 margin: 0 10px;
             }
+            
+            /* Bottom nav small screens */
+            .bottom-nav {
+                height: 60px;
+                padding: 8px 0;
+            }
+            
+            .nav-label {
+                font-size: 8px;
+            }
+            
+            .nav-icon {
+                font-size: 16px;
+            }
+            
+            .nav-item.stream-link .nav-label {
+                font-size: 9px;
+            }
+            
+            .notification-badge-bottom {
+                width: 16px;
+                height: 16px;
+                font-size: 9px;
+            }
         }
     </style>
 </head>
 <body>
-        <nav class="navbar">
-        <div class="navbar-container">
-            <a href="index.html" class="logo">WhipRoom</a>
-          <!-- Add this to your navigation menu -->
-            <li>
-                <a href="notification.html" class="nav-links">
-                    <i class="fas fa-bell"></i>
-                    <span class="notification-badge">0</span>
-                </a>
-            </li>
-            <div class="nav-toggle" id="mobile-menu">
-                <span class="bar"></span>
-                <span class="bar"></span>
-                <span class="bar"></span>
-            </div>
-            <ul class="nav-menu" id="nav-menu">
-                <li class="nav-item">
-                    <a href="mingle.html" class="nav-links active">
-                        <i class="fas fa-users"></i>
-                        <span>Connect</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="messages.html" class="nav-links">
-                        <i class="fas fa-comments"></i>
-                        <span>Chat</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="posts.html" class="nav-links">
-                        <i class="fas fa-graduation-cap"></i>
-                        <span>Resources</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="stream.html" class="nav-links active">
-                        <i class="fas fa-play-circle"></i>
-                        <span class="nav-text" style="font-family: 'Great Vibes', cursive; font-size: 1.1rem;">Stream</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="account.html" class="nav-links">
-                        <i class="fas fa-user-shield"></i>
-                        <span>My Profile</span>
-                    </a>
-                </li>
-            </ul>
-        </div>
-    </nav>
 
     <div class="main-content">
         <div class="page-header">
@@ -654,11 +695,10 @@
                 <i class="fas fa-plus"></i>
                 Create Group
             </button>
-            <button class="create-group-btn" >
-
+            <button class="create-group-btn">
                 <a href="admin-groups.html">
-                                    <i class="fas fa-scissors"></i>
-                edit Group
+                    <i class="fas fa-scissors"></i>
+                    edit Group
                 </a>
             </button>
         </div>
@@ -674,6 +714,30 @@
                 <p>Loading groups...</p>
             </div>
         </div>
+    </div>
+
+    <!-- Bottom Navigation with YOUR original groups.html links -->
+    <div class="bottom-nav">
+        <a href="mingle.html" class="nav-item active">
+            <i class="fas fa-users nav-icon"></i>
+            <span class="nav-label">Connect</span>
+        </a>
+        <a href="message.html" class="nav-item">
+            <i class="fas fa-comments nav-icon"></i>
+            <span class="nav-label">Chat</span>
+        </a>
+        <a href="posts.html" class="nav-item">
+            <i class="fas fa-graduation-cap nav-icon"></i>
+            <span class="nav-label">Resources</span>
+        </a>
+        <a href="stream.html" class="nav-item stream-link">
+            <i class="fas fa-play-circle nav-icon"></i>
+            <span class="nav-label">Stream</span>
+        </a>
+        <a href="account.html" class="nav-item">
+            <i class="fas fa-user-shield nav-icon"></i>
+            <span class="nav-label">My Profile</span>
+        </a>
     </div>
 
     <script type="module" src="group.js"></script>
