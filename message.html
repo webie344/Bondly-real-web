@@ -145,6 +145,79 @@
             background: var(--bg-primary);
         }
 
+        /* Skeleton Loading Styles - LIKE POST.HTML */
+        .messages-loading {
+            padding: 20px;
+            display: block;
+        }
+
+        .message-item.loading {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            gap: 12px;
+            border-bottom: 1px solid var(--border-light);
+            background: var(--bg-primary);
+            position: relative;
+            min-height: 72px;
+            animation: pulse 1.5s infinite;
+        }
+
+        .loading-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            flex-shrink: 0;
+        }
+
+        .loading-content {
+            flex: 1;
+            min-width: 0;
+            padding-right: 8px;
+        }
+
+        .loading-line {
+            height: 12px;
+            background: var(--bg-card);
+            border-radius: 4px;
+            margin-bottom: 8px;
+            animation: pulse 1.5s infinite;
+        }
+
+        .loading-line.short {
+            width: 40%;
+        }
+
+        .loading-line.medium {
+            width: 60%;
+        }
+
+        .loading-line.long {
+            width: 80%;
+        }
+
+        .loading-info {
+            width: 60px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .loading-dot {
+            width: 20px;
+            height: 20px;
+            border-radius: 10px;
+            background: var(--bg-card);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
         /* Conversation items - WhatsApp/TikTok style */
         .message-item {
             display: flex;
@@ -157,6 +230,18 @@
             background: var(--bg-primary);
             position: relative;
             min-height: 72px;
+            animation: fadeInUp 0.3s ease;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .message-item:hover {
@@ -315,6 +400,11 @@
             text-align: center;
             color: var(--text-muted);
             background: var(--bg-primary);
+            display: none;
+        }
+
+        .no-messages.visible {
+            display: block;
         }
 
         .no-messages i {
@@ -338,11 +428,13 @@
             line-height: 1.5;
         }
 
+        /* Old loading spinner - hidden by default */
         .loading {
             padding: 80px 20px;
             text-align: center;
             color: var(--text-muted);
             background: var(--bg-primary);
+            display: none;
         }
 
         .loading-spinner {
@@ -374,11 +466,13 @@
                 font-size: 0.9rem;
             }
             
-            .message-item {
+            .message-item,
+            .message-item.loading {
                 padding: 14px 16px;
                 gap: 12px;
             }
             
+            .loading-avatar,
             .user-avatar {
                 width: 48px;
                 height: 48px;
@@ -414,11 +508,13 @@
                 font-size: 0.9rem;
             }
             
-            .message-item {
+            .message-item,
+            .message-item.loading {
                 padding: 12px 16px;
                 min-height: 68px;
             }
             
+            .loading-avatar,
             .user-avatar {
                 width: 44px;
                 height: 44px;
@@ -468,13 +564,209 @@
 
         <!-- Messages List -->
         <div class="messages-list" id="messagesList">
-            <div class="loading">
+            <!-- Initial skeleton loading -->
+            <div class="messages-loading" id="initialLoading">
+                <div class="message-item loading">
+                    <div class="loading-avatar"></div>
+                    <div class="loading-content">
+                        <div class="loading-line medium"></div>
+                        <div class="loading-line long"></div>
+                        <div class="loading-line short"></div>
+                    </div>
+                    <div class="loading-info">
+                        <div class="loading-dot"></div>
+                        <div class="loading-line short" style="width: 40px; margin-top: 4px;"></div>
+                    </div>
+                </div>
+                <div class="message-item loading">
+                    <div class="loading-avatar"></div>
+                    <div class="loading-content">
+                        <div class="loading-line medium"></div>
+                        <div class="loading-line long"></div>
+                        <div class="loading-line short"></div>
+                    </div>
+                    <div class="loading-info">
+                        <div class="loading-dot"></div>
+                        <div class="loading-line short" style="width: 40px; margin-top: 4px;"></div>
+                    </div>
+                </div>
+                <div class="message-item loading">
+                    <div class="loading-avatar"></div>
+                    <div class="loading-content">
+                        <div class="loading-line medium"></div>
+                        <div class="loading-line long"></div>
+                        <div class="loading-line short"></div>
+                    </div>
+                    <div class="loading-info">
+                        <div class="loading-dot"></div>
+                        <div class="loading-line short" style="width: 40px; margin-top: 4px;"></div>
+                    </div>
+                </div>
+                <div class="message-item loading">
+                    <div class="loading-avatar"></div>
+                    <div class="loading-content">
+                        <div class="loading-line medium"></div>
+                        <div class="loading-line long"></div>
+                        <div class="loading-line short"></div>
+                    </div>
+                    <div class="loading-info">
+                        <div class="loading-dot"></div>
+                        <div class="loading-line short" style="width: 40px; margin-top: 4px;"></div>
+                    </div>
+                </div>
+                <div class="message-item loading">
+                    <div class="loading-avatar"></div>
+                    <div class="loading-content">
+                        <div class="loading-line medium"></div>
+                        <div class="loading-line long"></div>
+                        <div class="loading-line short"></div>
+                    </div>
+                    <div class="loading-info">
+                        <div class="loading-dot"></div>
+                        <div class="loading-line short" style="width: 40px; margin-top: 4px;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Old loading spinner (hidden) -->
+            <div class="loading" id="oldLoading">
                 <div class="loading-spinner"></div>
                 <p>Loading messages...</p>
             </div>
+            
+            <!-- Empty state -->
+            <div class="no-messages" id="noMessages">
+                <i class="far fa-comments"></i>
+                <h3>No Messages Yet</h3>
+                <p>Start a conversation by connecting with someone from the Connect page.</p>
+            </div>
+            
+            <!-- Messages will be loaded here by your JavaScript -->
         </div>
     </div>
 
+    <script>
+        // Messages skeleton loading setup
+        document.addEventListener('DOMContentLoaded', function() {
+            const messagesList = document.getElementById('messagesList');
+            const initialLoading = document.getElementById('initialLoading');
+            const noMessages = document.getElementById('noMessages');
+            const oldLoading = document.getElementById('oldLoading');
+            
+            // Hide old spinner immediately
+            if (oldLoading) {
+                oldLoading.style.display = 'none';
+            }
+            
+            // Function to create skeleton loaders for messages
+            window.createMessageSkeletonLoader = function(count = 5) {
+                let skeletons = '';
+                for (let i = 0; i < count; i++) {
+                    skeletons += `
+                        <div class="message-item loading">
+                            <div class="loading-avatar"></div>
+                            <div class="loading-content">
+                                <div class="loading-line medium"></div>
+                                <div class="loading-line long"></div>
+                                <div class="loading-line short"></div>
+                            </div>
+                            <div class="loading-info">
+                                <div class="loading-dot"></div>
+                                <div class="loading-line short" style="width: 40px; margin-top: 4px;"></div>
+                            </div>
+                        </div>
+                    `;
+                }
+                return skeletons;
+            };
+            
+            // Function to show skeleton loading
+            window.showMessagesSkeletonLoading = function() {
+                if (initialLoading) {
+                    initialLoading.style.display = 'block';
+                    initialLoading.innerHTML = window.createMessageSkeletonLoader(5);
+                }
+            };
+            
+            // Function to hide skeleton loading
+            window.hideMessagesSkeletonLoading = function() {
+                if (initialLoading) {
+                    initialLoading.style.display = 'none';
+                }
+                
+                // Remove all loading items
+                const loadingItems = document.querySelectorAll('.message-item.loading');
+                loadingItems.forEach(item => item.remove());
+            };
+            
+            // Function to show/hide no messages
+            window.toggleNoMessages = function(show) {
+                if (noMessages) {
+                    if (show) {
+                        noMessages.classList.add('visible');
+                    } else {
+                        noMessages.classList.remove('visible');
+                    }
+                }
+            };
+            
+            // Function to clear loading states
+            window.clearMessagesLoadingStates = function() {
+                window.hideMessagesSkeletonLoading();
+                window.toggleNoMessages(false);
+            };
+            
+            // Initial setup
+            window.showMessagesSkeletonLoading();
+            
+            // Tab switching functionality
+            const privateTab = document.getElementById('privateTab');
+            const groupTab = document.getElementById('groupTab');
+            const privateBadge = document.getElementById('privateBadge');
+            const groupBadge = document.getElementById('groupBadge');
+            
+            let currentTab = 'private';
+            
+            function switchTab(tab) {
+                // Update active tab
+                privateTab.classList.toggle('active', tab === 'private');
+                groupTab.classList.toggle('active', tab === 'group');
+                
+                currentTab = tab;
+                
+                // Show skeleton loading for new tab
+                window.showMessagesSkeletonLoading();
+                window.toggleNoMessages(false);
+                
+                // Your JavaScript should load messages for this tab
+                if (typeof window.loadMessagesForTab === 'function') {
+                    window.loadMessagesForTab(tab);
+                }
+            }
+            
+            privateTab.addEventListener('click', () => switchTab('private'));
+            groupTab.addEventListener('click', () => switchTab('group'));
+            
+            // Expose tab switching function
+            window.switchMessagesTab = switchTab;
+            
+            // Expose badge update functions
+            window.updatePrivateBadge = function(count) {
+                if (privateBadge) {
+                    privateBadge.textContent = count > 99 ? '99+' : count.toString();
+                    privateBadge.style.display = count > 0 ? 'inline-flex' : 'none';
+                }
+            };
+            
+            window.updateGroupBadge = function(count) {
+                if (groupBadge) {
+                    groupBadge.textContent = count > 99 ? '99+' : count.toString();
+                    groupBadge.style.display = count > 0 ? 'inline-flex' : 'none';
+                }
+            };
+        });
+    </script>
+    
     <script type="module" src="group.js"></script>
 </body>
 </html>

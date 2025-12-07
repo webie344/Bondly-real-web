@@ -247,10 +247,76 @@
             display: none;
         }
 
+        /* Skeleton Loading Styles - LIKE POST.HTML */
+        .messages-loading {
+            padding: 20px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .messages-loading.active {
+            display: block;
+        }
+
+        .message-group.loading {
+            margin-bottom: 20px;
+            animation: pulse 1.5s infinite;
+        }
+
+        .loading-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            float: left;
+            margin-right: 12px;
+        }
+
+        .loading-content {
+            margin-left: 52px;
+        }
+
+        .loading-line {
+            height: 12px;
+            background: var(--bg-card);
+            border-radius: 4px;
+            margin-bottom: 8px;
+            animation: pulse 1.5s infinite;
+        }
+
+        .loading-line.short {
+            width: 40%;
+        }
+
+        .loading-line.medium {
+            width: 60%;
+        }
+
+        .loading-line.long {
+            width: 80%;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
         /* Message Styles (Discord-like) */
         .message-group {
             margin-bottom: 20px;
             position: relative;
+            animation: fadeInUp 0.3s ease;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .message-header {
@@ -652,7 +718,7 @@
         .message-input-container {
             display: flex;
             align-items: center;
-            gap: 7px;
+            gap: 2px;
         }
 
         .message-input {
@@ -660,7 +726,7 @@
             padding: 12px 15px;
             background: var(--bg-primary);
             border: 1px solid var(--border);
-            border-radius: 8px;
+            border-radius: 18px;
             color: var(--text-primary);
             font-size: 0.7rem;
             font-family: 'Inter', sans-serif;
@@ -700,7 +766,7 @@
             color: white;
             border: none;
             border-radius: 8px;
-            padding: 10px 20px;
+            padding: 10px 10px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
@@ -713,6 +779,38 @@
         .send-btn:disabled {
             background: var(--border);
             cursor: not-allowed;
+        }
+
+        /* Lazy Loading More Indicator */
+        .load-more-container {
+            text-align: center;
+            padding: 20px;
+            margin: 10px 0;
+            display: none;
+        }
+
+        .load-more-container.visible {
+            display: block;
+        }
+
+        .load-more-btn {
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .load-more-btn:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
         }
 
         /* Scrollbar Styling */
@@ -849,8 +947,8 @@
         <div class="chat-main">
             <div class="chat-header">
                 <div>
-                    <h2 class="chat-title" id="chatTitle"></h2>
-                    <p class="chat-subtitle" id="chatSubtitle"></p>
+                    <h2 class="chat-title" id="chatTitle">Loading..</h2>
+                    <p class="chat-subtitle" id="chatSubtitle">..</p>
                 </div>
                 <div class="chat-header-actions">
                     <button class="header-btn" id="sidebarToggle">
@@ -864,10 +962,47 @@
 
             <!-- Messages Container -->
             <div class="messages-container" id="messagesContainer">
-                <div class="no-messages" id="noMessages">
-                    <p>No messages yet. Start the conversation!</p>
+                <!-- Initial skeleton loading -->
+                <div id="initialLoading">
+                    <div class="message-group loading">
+                        <div class="loading-avatar"></div>
+                        <div class="loading-content">
+                            <div class="loading-line long"></div>
+                            <div class="loading-line medium"></div>
+                            <div class="loading-line short"></div>
+                        </div>
+                    </div>
+                    <div class="message-group loading">
+                        <div class="loading-avatar"></div>
+                        <div class="loading-content">
+                            <div class="loading-line long"></div>
+                            <div class="loading-line medium"></div>
+                            <div class="loading-line short"></div>
+                        </div>
+                    </div>
+                    <div class="message-group loading">
+                        <div class="loading-avatar"></div>
+                        <div class="loading-content">
+                            <div class="loading-line long"></div>
+                            <div class="loading-line medium"></div>
+                            <div class="loading-line short"></div>
+                        </div>
+                    </div>
                 </div>
-                <!-- Messages will be loaded here -->
+                
+                <!-- Load more button -->
+                <div class="load-more-container" id="loadMoreContainer">
+                    <button class="load-more-btn" id="loadMoreBtn">
+                        <i class="fas fa-chevron-up"></i> Load Older Messages
+                    </button>
+                </div>
+                
+                <!-- Messages will be loaded here by your JavaScript -->
+            </div>
+
+            <!-- No messages -->
+            <div class="no-messages" id="noMessages">
+                <p>No messages yet. Start the conversation!</p>
             </div>
 
             <!-- Input Area -->
@@ -887,13 +1022,136 @@
                         </button>
                     </div>
                     <button class="send-btn" id="sendBtn" disabled>
-                        Send
+                        <i class="fas fa-upload"></i>
                     </button>
                 </div>
             </div>
         </div>
     </div>
 
+    <script>
+        // Lazy loading skeleton setup - just the skeleton showing functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const messagesContainer = document.getElementById('messagesContainer');
+            const loadMoreBtn = document.getElementById('loadMoreBtn');
+            const loadMoreContainer = document.getElementById('loadMoreContainer');
+            const initialLoading = document.getElementById('initialLoading');
+            const noMessages = document.getElementById('noMessages');
+            
+            // Your group.js will control these variables
+            window.lazyLoadingState = {
+                currentPage: 0,
+                isLoading: false,
+                hasMoreMessages: true
+            };
+            
+            // Function to create skeleton loaders
+            window.createSkeletonLoader = function(count = 3) {
+                let skeletons = '';
+                for (let i = 0; i < count; i++) {
+                    skeletons += `
+                        <div class="message-group loading">
+                            <div class="loading-avatar"></div>
+                            <div class="loading-content">
+                                <div class="loading-line long"></div>
+                                <div class="loading-line medium"></div>
+                                <div class="loading-line short"></div>
+                            </div>
+                        </div>
+                    `;
+                }
+                return skeletons;
+            };
+            
+            // Function to show skeleton loading
+            window.showSkeletonLoading = function() {
+                const skeletonHTML = window.createSkeletonLoader();
+                const loadingDiv = document.createElement('div');
+                loadingDiv.className = 'messages-loading active';
+                loadingDiv.innerHTML = skeletonHTML;
+                
+                // Insert at the top of messages
+                const firstMessage = messagesContainer.querySelector('.message-group:not(.loading)');
+                if (firstMessage) {
+                    messagesContainer.insertBefore(loadingDiv, firstMessage);
+                } else {
+                    messagesContainer.appendChild(loadingDiv);
+                }
+                
+                return loadingDiv;
+            };
+            
+            // Function to remove skeleton loading
+            window.removeSkeletonLoading = function(loadingElement) {
+                if (loadingElement && loadingElement.parentNode) {
+                    loadingElement.remove();
+                }
+            };
+            
+            // Function to clear initial loading
+            window.clearInitialLoading = function() {
+                if (initialLoading) {
+                    initialLoading.style.display = 'none';
+                }
+            };
+            
+            // Function to show/hide load more button
+            window.toggleLoadMoreButton = function(show) {
+                if (loadMoreContainer) {
+                    if (show) {
+                        loadMoreContainer.classList.add('visible');
+                    } else {
+                        loadMoreContainer.classList.remove('visible');
+                    }
+                }
+            };
+            
+            // Function to show/hide no messages
+            window.toggleNoMessages = function(show) {
+                if (noMessages) {
+                    if (show) {
+                        noMessages.style.display = 'block';
+                    } else {
+                        noMessages.style.display = 'none';
+                    }
+                }
+            };
+            
+            // Load more button click handler
+            loadMoreBtn.addEventListener('click', function() {
+                // Your group.js should handle this
+                if (typeof window.loadMoreMessages === 'function') {
+                    window.loadMoreMessages();
+                }
+            });
+            
+            // Auto-load when scrolling near top (infinite scroll)
+            messagesContainer.addEventListener('scroll', function() {
+                if (messagesContainer.scrollTop < 100 && 
+                    !window.lazyLoadingState.isLoading && 
+                    window.lazyLoadingState.hasMoreMessages) {
+                    
+                    if (typeof window.loadMoreMessages === 'function') {
+                        window.loadMoreMessages();
+                    }
+                }
+            });
+            
+            // Your existing clearLoadingStates function
+            window.clearLoadingStates = function() {
+                window.clearInitialLoading();
+                
+                // Remove any skeleton loaders
+                const skeletonLoaders = document.querySelectorAll('.messages-loading.active');
+                skeletonLoaders.forEach(loader => loader.remove());
+                
+                // Remove loading class from any message groups
+                const loadingGroups = document.querySelectorAll('.message-group.loading');
+                loadingGroups.forEach(group => group.remove());
+            };
+        });
+    </script>
+    
     <script type="module" src="group.js"></script>
 </body>
 </html>
