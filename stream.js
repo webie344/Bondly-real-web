@@ -63,6 +63,10 @@ let lastRenderTime = 0;
 // Comment tracking to prevent duplicates
 let activeCommentListeners = new Map();
 
+// Click tracking for double click detection
+let lastClickTime = 0;
+let clickTimeout = null;
+
 // Supported video formats
 const SUPPORTED_VIDEO_FORMATS = [
     'video/mp4', 'video/quicktime', 'video/x-m4v', 'video/3gpp', 'video/3gpp2',
@@ -518,7 +522,7 @@ class StreamManager {
         }
     }
 
-    // COMMENT FUNCTIONALITY - UPDATED TO PREVENT DUPLICATES
+    // COMMENT FUNCTIONALITY - UPDATED WITH REPLY SUPPORT
     async loadComments(streamId, container) {
         if (!container) return;
 
@@ -548,6 +552,9 @@ class StreamManager {
                 snapshot.forEach(doc => {
                     const comment = doc.data();
                     userIds.add(comment.userId);
+                    if (comment.replyTo) {
+                        userIds.add(comment.replyTo.userId);
+                    }
                 });
 
                 // Get user data for all comments
@@ -569,12 +576,15 @@ class StreamManager {
                         
                         displayedCommentIds.add(commentId);
                         const user = usersData[comment.userId] || {};
-                        const commentElement = this.createCommentElement(comment, user, commentId);
+                        const commentElement = this.createCommentElement(comment, user, commentId, usersData);
                         container.appendChild(commentElement);
                     });
                     
                     // Scroll to bottom
                     container.scrollTop = container.scrollHeight;
+                    
+                    // Add reply functionality
+                    this.addReplyListeners(streamId);
                 });
             }, (error) => {
                 console.error('Error loading comments:', error);
@@ -590,10 +600,22 @@ class StreamManager {
         }
     }
 
-    createCommentElement(comment, user, commentId) {
+    createCommentElement(comment, user, commentId, usersData) {
         const commentDiv = document.createElement('div');
         commentDiv.className = 'comment-item';
         commentDiv.dataset.commentId = commentId;
+        
+        let replyHTML = '';
+        if (comment.replyTo) {
+            const repliedUser = usersData[comment.replyTo.userId] || { name: 'Unknown User' };
+            replyHTML = `
+                <div class="comment-reply-info">
+                    <i class="fas fa-reply"></i>
+                    <span>Replying to ${repliedUser.name}</span>
+                </div>
+            `;
+        }
+        
         commentDiv.innerHTML = `
             <div class="comment-header">
                 <img src="${user.profileImage || 'images-defaultse-profile.jpg'}" 
@@ -602,13 +624,47 @@ class StreamManager {
                     <strong>${user.name || 'Unknown User'}</strong>
                     <span class="comment-time">${formatTime(comment.createdAt)}</span>
                 </div>
+                <button class="comment-reply-btn" data-comment-id="${commentId}" 
+                        data-user-name="${user.name || 'Unknown User'}">
+                    <i class="fas fa-reply"></i>
+                </button>
             </div>
+            ${replyHTML}
             <div class="comment-text">${comment.text}</div>
         `;
         return commentDiv;
     }
 
-    async handleAddComment(streamId, commentText) {
+    addReplyListeners(streamId) {
+        document.querySelectorAll('.comment-reply-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const commentId = btn.dataset.commentId;
+                const userName = btn.dataset.userName;
+                this.handleReplyClick(streamId, commentId, userName);
+            });
+        });
+    }
+
+    handleReplyClick(streamId, commentId, userName) {
+        if (!currentUser) {
+            alert('Please login to reply to comments');
+            return;
+        }
+
+        const modalCommentInput = document.getElementById('modalCommentInput');
+        if (modalCommentInput) {
+            modalCommentInput.value = `@${userName} `;
+            modalCommentInput.focus();
+            modalCommentInput.setAttribute('data-reply-to', commentId);
+            modalCommentInput.setAttribute('data-reply-user-name', userName);
+            
+            // Scroll to input
+            modalCommentInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+
+    async handleAddComment(streamId, commentText, replyTo = null) {
         if (!currentUser) {
             alert('Please login to add comments');
             return false;
@@ -620,12 +676,31 @@ class StreamManager {
         }
 
         try {
-            // Add comment to subcollection
-            await addDoc(collection(db, 'streams', streamId, 'comments'), {
+            const commentData = {
                 userId: currentUser.uid,
                 text: commentText.trim(),
                 createdAt: serverTimestamp()
-            });
+            };
+
+            // Add reply information if replying to a comment
+            if (replyTo) {
+                // Get the original comment to include in reply
+                const originalCommentRef = doc(db, 'streams', streamId, 'comments', replyTo.commentId);
+                const originalCommentSnap = await getDoc(originalCommentRef);
+                
+                if (originalCommentSnap.exists()) {
+                    const originalComment = originalCommentSnap.data();
+                    commentData.replyTo = {
+                        userId: replyTo.userId,
+                        commentId: replyTo.commentId,
+                        userName: replyTo.userName
+                    };
+                    commentData.text = commentData.text.replace(`@${replyTo.userName} `, '');
+                }
+            }
+
+            // Add comment to subcollection
+            await addDoc(collection(db, 'streams', streamId, 'comments'), commentData);
 
             // Update comments count
             const streamRef = doc(db, 'streams', streamId);
@@ -818,6 +893,7 @@ class TikTokFeed {
         this.modalCommentInput = document.getElementById('modalCommentInput');
         this.modalSendComment = document.getElementById('modalSendComment');
         this.closeComments = document.getElementById('closeComments');
+        this.replyTo = null; // Track if we're replying to a comment
         
         this.init();
     }
@@ -840,9 +916,12 @@ class TikTokFeed {
             this.videoFeed.addEventListener('mousemove', (e) => this.handleMouseMove(e));
             this.videoFeed.addEventListener('mouseup', (e) => this.handleMouseUp(e));
             this.videoFeed.addEventListener('mouseleave', (e) => this.handleMouseLeave(e));
+
+            // VIDEO CLICK EVENTS - TIKTOK-LIKE CONTROLS
+            this.videoFeed.addEventListener('click', (e) => this.handleVideoClick(e));
         }
 
-        // Comments modal - FIXED: Use proper event delegation
+        // Comments modal
         if (this.closeComments) {
             this.closeComments.addEventListener('click', () => this.closeCommentsModal());
         }
@@ -854,6 +933,14 @@ class TikTokFeed {
         if (this.modalCommentInput) {
             this.modalCommentInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') this.handleAddComment();
+            });
+            
+            // Clear reply when input is cleared
+            this.modalCommentInput.addEventListener('input', (e) => {
+                const value = e.target.value;
+                if (!value.startsWith('@')) {
+                    this.clearReply();
+                }
             });
         }
 
@@ -881,6 +968,121 @@ class TikTokFeed {
                 e.preventDefault();
             }
         }, { passive: false });
+
+        // Handle escape key to clear reply
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.replyTo) {
+                this.clearReply();
+            }
+        });
+    }
+
+    // TIKTOK-LIKE VIDEO CONTROLS
+    handleVideoClick(e) {
+        // Don't handle clicks on interactive elements
+        if (e.target.closest('.side-action, .video-side-actions, .video-info-overlay')) {
+            return;
+        }
+        
+        const videoSlide = e.target.closest('.video-slide');
+        if (!videoSlide || !videoSlide.classList.contains('active')) {
+            return;
+        }
+        
+        const streamId = videoSlide.dataset.streamId;
+        const videoData = this.videoElements.get(streamId);
+        
+        if (!videoData || !videoData.videoElement) {
+            return;
+        }
+        
+        const video = videoData.videoElement;
+        const now = Date.now();
+        
+        // Check for double click (within 300ms)
+        if (now - lastClickTime < 300) {
+            // Double click detected
+            clearTimeout(clickTimeout);
+            lastClickTime = 0;
+            this.handleDoubleClick(video, videoSlide);
+        } else {
+            // Single click - handle after delay
+            lastClickTime = now;
+            clickTimeout = setTimeout(() => {
+                this.handleSingleClick(video, videoSlide);
+            }, 300);
+        }
+    }
+
+    handleSingleClick(video, videoSlide) {
+        // Toggle play/pause
+        if (video.paused) {
+            video.play().catch(e => console.log('Play failed:', e));
+            this.hidePlayPauseOverlay(videoSlide);
+        } else {
+            video.pause();
+            this.showPlayPauseOverlay(videoSlide, 'pause');
+        }
+    }
+
+    handleDoubleClick(video, videoSlide) {
+        // Fast forward 10 seconds
+        video.currentTime = Math.min(video.duration, video.currentTime + 10);
+        
+        // Show fast forward overlay
+        this.showFastForwardOverlay(videoSlide);
+        
+        // Play if paused
+        if (video.paused) {
+            video.play().catch(e => console.log('Play failed:', e));
+        }
+    }
+
+    showPlayPauseOverlay(videoSlide, state) {
+        // Remove any existing overlay
+        this.removeVideoOverlay(videoSlide);
+        
+        const overlay = document.createElement('div');
+        overlay.className = 'video-click-overlay';
+        overlay.innerHTML = `<i class="fas fa-${state === 'pause' ? 'pause' : 'play'}"></i>`;
+        
+        videoSlide.appendChild(overlay);
+        
+        // Remove overlay after 1 second
+        setTimeout(() => {
+            if (overlay.parentNode) {
+                overlay.remove();
+            }
+        }, 1000);
+    }
+
+    showFastForwardOverlay(videoSlide) {
+        // Remove any existing overlay
+        this.removeVideoOverlay(videoSlide);
+        
+        const overlay = document.createElement('div');
+        overlay.className = 'video-click-overlay fast-forward';
+        overlay.innerHTML = `<i class="fas fa-forward"></i><span>+10s</span>`;
+        
+        videoSlide.appendChild(overlay);
+        
+        // Remove overlay after 1 second
+        setTimeout(() => {
+            if (overlay.parentNode) {
+                overlay.remove();
+            }
+        }, 1000);
+    }
+
+    hidePlayPauseOverlay(videoSlide) {
+        this.removeVideoOverlay(videoSlide);
+    }
+
+    removeVideoOverlay(videoSlide) {
+        const existingOverlay = videoSlide.querySelector('.video-click-overlay');
+        if (existingOverlay) {
+            existingOverlay.remove();
+        }
     }
 
     handleTouchStart(e) {
@@ -1385,6 +1587,7 @@ class TikTokFeed {
         if (this.commentsModal) {
             this.commentsModal.classList.remove('active');
             this.currentStreamId = null;
+            this.clearReply();
         }
         
         // Clean up comment listener when modal is closed
@@ -1392,6 +1595,15 @@ class TikTokFeed {
             const unsubscribe = activeCommentListeners.get(this.currentStreamId);
             unsubscribe();
             activeCommentListeners.delete(this.currentStreamId);
+        }
+    }
+
+    clearReply() {
+        this.replyTo = null;
+        const modalCommentInput = document.getElementById('modalCommentInput');
+        if (modalCommentInput) {
+            modalCommentInput.removeAttribute('data-reply-to');
+            modalCommentInput.removeAttribute('data-reply-user-name');
         }
     }
 
@@ -1416,10 +1628,25 @@ class TikTokFeed {
             return;
         }
 
+        // Check if this is a reply
+        let replyTo = null;
+        const replyToCommentId = this.modalCommentInput.getAttribute('data-reply-to');
+        const replyToUserName = this.modalCommentInput.getAttribute('data-reply-user-name');
+        
+        if (replyToCommentId && replyToUserName && commentText.startsWith(`@${replyToUserName} `)) {
+            // This is a reply to a specific comment
+            replyTo = {
+                commentId: replyToCommentId,
+                userName: replyToUserName,
+                userId: await this.getUserIdFromComment(replyToCommentId)
+            };
+        }
+
         try {
-            const success = await streamManager.handleAddComment(this.currentStreamId, commentText);
+            const success = await streamManager.handleAddComment(this.currentStreamId, commentText, replyTo);
             if (success) {
                 this.modalCommentInput.value = '';
+                this.clearReply();
                 
                 // Update comment count on the video
                 const currentVideo = this.videos.find(v => v.id === this.currentStreamId);
@@ -1436,6 +1663,19 @@ class TikTokFeed {
             console.error('Error adding comment:', error);
             alert('Error adding comment: ' + error.message);
         }
+    }
+
+    async getUserIdFromComment(commentId) {
+        try {
+            const commentRef = doc(db, 'streams', this.currentStreamId, 'comments', commentId);
+            const commentSnap = await getDoc(commentRef);
+            if (commentSnap.exists()) {
+                return commentSnap.data().userId;
+            }
+        } catch (error) {
+            console.error('Error getting user ID from comment:', error);
+        }
+        return null;
     }
 
     shareVideo(streamId) {
@@ -1488,6 +1728,11 @@ class TikTokFeed {
         // Clean up all comment listeners
         activeCommentListeners.forEach(unsubscribe => unsubscribe());
         activeCommentListeners.clear();
+        
+        // Clear click timeout
+        if (clickTimeout) {
+            clearTimeout(clickTimeout);
+        }
     }
 }
 

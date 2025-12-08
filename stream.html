@@ -196,7 +196,7 @@
         }
 
         .side-action:hover {
-            transform: scale(1.1);
+            transform:scale(1.1);
         }
 
         .side-action-icon {
@@ -209,7 +209,7 @@
             justify-content: center;
             font-size: 20px;
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.1);
+            border:none ;
         }
 
         .side-action-count {
@@ -218,9 +218,9 @@
         }
 
         .side-action.liked .side-action-icon {
-            background: rgba(231, 76, 60, 0.3);
+            background-color:none;
             color: #e74c3c;
-            border-color: rgba(231, 76, 60, 0.5);
+            border-color:none ;
         }
 
         /* Top Bar */
@@ -357,9 +357,9 @@
         .add-comment {
             display: flex;
             gap: 10px;
-            padding: 10px;
+            padding: 0px;
             background: rgba(255,255,255,0.05);
-            border-radius: 25px;
+            border-radius: 2px;
         }
 
         .comment-input {
@@ -370,6 +370,7 @@
             font-size: 15px;
             padding: 10px;
             outline: none;
+            border-radius: 8px;
         }
 
         .comment-input::placeholder {
@@ -520,11 +521,77 @@
                 font-size: 18px;
             }
         }
+           /* Video Click Overlay Styles */
+.video-click-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 100;
+    pointer-events: none;
+    animation: fadeInOut 1s ease-in-out;
+}
 
+.video-click-overlay i {
+    font-size: 60px;
+    color: white;
+    margin-bottom: 10px;
+}
+
+.video-click-overlay.fast-forward i {
+    font-size: 50px;
+}
+
+.video-click-overlay.fast-forward span {
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+@keyframes fadeInOut {
+    0% { opacity: 0; }
+    20% { opacity: 1; }
+    80% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* Comment Reply Styles */
+.comment-reply-info {
+    background: rgba(255, 45, 85, 0.1);
+    padding: 5px 10px;
+    border-radius: 5px;
+    margin: 5px 0 8px 45px;
+    font-size: 12px;
+    color: #ff2d55;
+}
+
+.comment-reply-info i {
+    margin-right: 5px;
+}
+
+.comment-reply-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    padding: 5px;
+    margin-left: auto;
+    transition: color 0.2s;
+}
+
+.comment-reply-btn:hover {
+    color: #ff2d55;
+}
         @media (max-width: 480px) {
             .video-info-overlay {
                 bottom: 70px;
-                padding: 15px;
+                7: 15px;
             }
             
             .video-side-actions {
