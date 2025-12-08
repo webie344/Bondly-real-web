@@ -106,6 +106,50 @@
             color: var(--text-light);
         }
 
+        /* CALL BUTTONS STYLES - ADDED SECTION */
+        .call-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .call-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .call-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .call-btn:active {
+            transform: translateY(0);
+        }
+
+        .call-btn.voice-call {
+            background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
+            color: white;
+        }
+
+        .call-btn.voice-call:hover {
+            background: linear-gradient(135deg, #43A047 0%, #1B5E20 100%);
+        }
+
+        .call-btn i {
+            font-size: 1rem;
+        }
+
         .sidebar-content {
             flex: 1;
             overflow-y: auto;
@@ -177,9 +221,11 @@
             color: var(--text-light);
         }
 
+        /* CHAT HEADER ACTIONS WITH CALL BUTTON - UPDATED */
         .chat-header-actions {
             display: flex;
             gap: 10px;
+            align-items: center;
         }
 
         .header-btn {
@@ -675,6 +721,16 @@
             .cancel-reply i {
                 font-size: 12px;
             }
+
+            /* Mobile call buttons adjustments */
+            .call-buttons {
+                gap: 8px;
+            }
+
+            .call-btn {
+                padding: 8px 16px;
+                font-size: 0.8rem;
+            }
         }
 
         @media (max-width: 480px) {
@@ -703,6 +759,18 @@
             .reply-indicator-content {
                 max-width: calc(100% - 30px);
             }
+
+            /* Small screen call buttons */
+            .call-buttons {
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .call-btn {
+                width: 100%;
+                justify-content: center;
+                padding: 10px;
+            }
         }
     </style>
 </head>
@@ -721,6 +789,14 @@
                         <h3 class="partner-name" id="partnerName">loading..</h3>
                         <p class="partner-email" id="partnerEmail">loading..</p>
                     </div>
+                </div>
+                
+                <!-- CALL BUTTONS IN SIDEBAR - ADDED -->
+                <div class="call-buttons">
+                    <button id="voiceCallBtn" class="call-btn voice-call">
+                        <i class="fas fa-phone-alt"></i>
+                        Start Voice Call
+                    </button>
                 </div>
             </div>
             <div class="sidebar-content">
@@ -743,6 +819,11 @@
                     <p class="chat-subtitle" id="chatSubtitle"></p>
                 </div>
                 <div class="chat-header-actions">
+                    <!-- CALL BUTTON IN HEADER - ADDED -->
+                    <button id="voiceCallBtnMobile" class="call-btn voice-call" style="padding: 8px 15px; font-size: 0.9rem;">
+                        <i class="fas fa-phone-alt"></i>
+                        Call
+                    </button>
                     <button class="header-btn" id="sidebarToggle">
                         <i class="fas fa-bars"></i>
                     </button>
@@ -938,9 +1019,44 @@
                 const loadingGroups = document.querySelectorAll('.message-group.loading');
                 loadingGroups.forEach(group => group.remove());
             };
+            
+            // CALL BUTTONS FUNCTIONALITY FOR PRIVATE CHAT
+            const voiceCallBtn = document.getElementById('voiceCallBtn');
+            const voiceCallBtnMobile = document.getElementById('voiceCallBtnMobile');
+            
+            // Function to handle voice call
+            function handleVoiceCall() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const partnerId = urlParams.get('id');
+                
+                if (!partnerId) {
+                    alert('Cannot start call. No chat partner found.');
+                    return;
+                }
+                
+                // Check if calls module is loaded
+                if (window.callsModule && window.callsModule.initiatePersonalCall) {
+                    window.callsModule.initiatePersonalCall(partnerId);
+                } else {
+                    // Fallback to direct call if module isn't loaded yet
+                    const callId = 'temp_' + Date.now();
+                    window.location.href = `calls.html?type=personal&partnerId=${partnerId}&incoming=false&callId=${callId}`;
+                }
+            }
+            
+            // Add event listeners to call buttons
+            if (voiceCallBtn) {
+                voiceCallBtn.addEventListener('click', handleVoiceCall);
+            }
+            
+            if (voiceCallBtnMobile) {
+                voiceCallBtnMobile.addEventListener('click', handleVoiceCall);
+            }
         });
     </script>
     
+    <!-- Import the calls module for voice calls -->
+    <script type="module" src="calls.js"></script>
     <script type="module" src="group.js"></script>
 </body>
 </html>
